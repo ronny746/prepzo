@@ -4,7 +4,7 @@ import React from 'react';
 import { Phone, Mail, Globe, ChevronRight } from 'lucide-react';
 
 export function CounsellingBanner() {
-  const whatsappUrl = "https://wa.me/917607151617?text=Hi%2C%20I%20want%20to%20book%20a%20free%20counselling%20session%20with%20Prepzo";
+  const whatsappUrl = "https://wa.me/919311623522?text=Hi%2C%20I%20want%20to%20book%20a%20free%20counselling%20session%20with%20Prepzo";
 
   return (
     <div className="w-full max-w-5xl mx-auto my-4 sm:my-8 px-2.5 sm:px-4">
@@ -38,13 +38,13 @@ export function CounsellingBanner() {
             {/* Left Column: Phone & Whatsapp */}
             <div className="space-y-2.5 sm:space-y-5">
               {/* Phone */}
-              <a href="tel:+917607151617" className="flex items-center gap-2.5 sm:gap-4 group">
+              <a href="tel:+919311623522" className="flex items-center gap-2.5 sm:gap-4 group">
                 <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full border-2 border-[#0B132B] flex items-center justify-center text-[#0B132B] group-hover:bg-[#0B132B] group-hover:text-white transition-all shadow-sm shrink-0">
                   <Phone className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
                 </div>
                 <div>
                   <p className="text-[10px] sm:text-xs font-bold text-[#0B132B] uppercase tracking-wider">Phone:</p>
-                  <p className="text-xs sm:text-xl font-extrabold text-[#0B132B] group-hover:text-emerald-700 transition-colors">+91-7607151617</p>
+                  <p className="text-xs sm:text-base md:text-lg font-extrabold text-[#0B132B] group-hover:text-emerald-700 transition-colors">+91 93116 23522 / +91 87963 39455</p>
                 </div>
               </a>
 
@@ -58,7 +58,7 @@ export function CounsellingBanner() {
                 </div>
                 <div>
                   <p className="text-[10px] sm:text-xs font-bold text-emerald-700 uppercase tracking-wider">Whatsapp:</p>
-                  <p className="text-xs sm:text-xl font-extrabold text-[#0B132B] group-hover:text-emerald-700 transition-colors">+91-7607151617</p>
+                  <p className="text-xs sm:text-base md:text-lg font-extrabold text-[#0B132B] group-hover:text-emerald-700 transition-colors">+91 93116 23522</p>
                 </div>
               </a>
             </div>

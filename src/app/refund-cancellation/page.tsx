@@ -138,9 +138,10 @@ export default function RefundCancellation() {
             <p className="text-gray-600 mt-2">Contact the Institute's Grievance Officer within 30 days of the transaction date.</p>
             <ul className="mt-4 space-y-2">
               <li><strong className="text-gray-900">Grievance Officer:</strong> Sushant Kumar</li>
+              <li><strong className="text-gray-900">Address:</strong> Unacademy tower, Ipil road number 2, Kota, Rajasthan</li>
               <li><strong className="text-gray-900">Email:</strong> <a href="mailto:contact@prepzo.com" className="text-primary-600 hover:underline">contact@prepzo.com</a></li>
-              <li><strong className="text-gray-900">Phone:</strong> +91-7607151617</li>
-              <li><strong className="text-gray-900">Whatsapp:</strong> +91-7607151617</li>
+              <li><strong className="text-gray-900">Phone:</strong> +91 93116 23522, +91 87963 39455</li>
+              <li><strong className="text-gray-900">Whatsapp:</strong> +91 93116 23522</li>
               <li><strong className="text-gray-900">Website:</strong> <a href="https://prepzo.com" className="text-primary-600 hover:underline" target="_blank" rel="noopener noreferrer">prepzo.com</a></li>
               <li><strong className="text-gray-900">Hours:</strong> Monday to Saturday, 9:00 AM to 6:00 PM IST</li>
             </ul>

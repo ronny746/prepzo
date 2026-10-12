@@ -173,15 +173,15 @@ async function runSeed() {
       logoUrl: '/prepzo-logo.png',
       planType: 'enterprise',
       contactEmail: 'prepzo333@gmail.com',
-      contactPhone: '+91-9876543210',
-      address: 'Prepzo Headquarters',
+      contactPhone: '+91 93116 23522',
+      address: 'Unacademy tower, Ipil road number 2, Kota, Rajasthan',
       branches: [
         {
           name: 'Main Campus',
           code: 'HQ',
-          address: 'Prepzo Headquarters',
+          address: 'Unacademy tower, Ipil road number 2, Kota, Rajasthan',
           contactEmail: 'prepzo333@gmail.com',
-          contactPhone: '+91-9876543210'
+          contactPhone: '+91 93116 23522'
         }
       ],
       settings: {

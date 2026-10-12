@@ -60,7 +60,7 @@ export default function PrivacyPolicy() {
 
         <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mt-12 mb-6">3.5 Your Rights</h2>
         <p className="mb-8">
-          Depending on your location, you have the right to access the personal data we hold about you, request corrections to inaccurate information, or request the deletion of your account and data, subject to legal or administrative bookkeeping overrides. For data requests, contact <a href="mailto:contact@prepzo.com" className="text-primary-600 font-semibold hover:underline">contact@prepzo.com</a> or Call/WhatsApp +91-7607151617.
+          Depending on your location, you have the right to access the personal data we hold about you, request corrections to inaccurate information, or request the deletion of your account and data, subject to legal or administrative bookkeeping overrides. For data requests, contact <a href="mailto:contact@prepzo.com" className="text-primary-600 font-semibold hover:underline">contact@prepzo.com</a> or Call/WhatsApp +91 93116 23522 / +91 87963 39455. Office: Unacademy tower, Ipil road number 2, Kota, Rajasthan.
         </p>
       </div>
     </div>

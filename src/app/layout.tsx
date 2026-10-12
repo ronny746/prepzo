@@ -18,6 +18,15 @@ const mulish = Mulish({
 export const metadata: Metadata = {
   title: "Prepzo | Smart prep, learn anytime anywhere",
   description: "Prepzo helps learners prepare with live classes, study material, practice tests and personalised academic support.",
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.png', type: 'image/png', sizes: '512x512' },
+    ],
+    apple: [
+      { url: '/apple-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
+  },
 };
 
 export const viewport: Viewport = {
