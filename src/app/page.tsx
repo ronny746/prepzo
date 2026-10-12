@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowRight, BookOpen, ChartNoAxesCombined, CircleCheck, Menu, Play, X } from "lucide-react";
 import { useState } from "react";
 import { LoginModal } from "@/components/LoginModal";
+import PrepzoLogo from "@/components/PrepzoLogo";
 
 const pathways = [
   ["01", "Learn", "Live lessons, recordings and clear notes — all in one study space."],
@@ -20,8 +21,8 @@ export default function LandingPage() {
     <main className="min-h-screen overflow-hidden bg-[#f7faf7] text-[#004933]">
       <header className="sticky top-0 z-50 border-b border-[#005c42]/10 bg-[#f7faf7]/95 backdrop-blur">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
-          <Link href="/" className="inline-flex items-center" aria-label="Prepzo home">
-            <Image src="/prepzo-logo.png" alt="Prepzo — smart prep, learn anytime anywhere" width={150} height={118} className="h-[68px] w-[88px] object-contain sm:h-[74px] sm:w-[96px]" priority />
+          <Link href="/" className="inline-flex items-center py-1" aria-label="Prepzo home">
+            <PrepzoLogo variant="dark" size="lg" />
           </Link>
           <nav className="hidden items-center gap-8 text-sm font-bold text-[#266651] md:flex"><a href="#how-it-works" className="hover:text-[#005c42]">How it works</a><a href="#for-everyone" className="hover:text-[#005c42]">For everyone</a><a href="#start" className="hover:text-[#005c42]">Get started</a></nav>
           <button onClick={() => setLoginOpen(true)} className="hidden rounded-full bg-[#005c42] px-5 py-2.5 text-sm font-bold text-white shadow-[0_10px_24px_rgba(0,92,66,.18)] transition hover:bg-[#004933] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e8a400] sm:block">Sign in</button>

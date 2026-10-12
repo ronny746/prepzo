@@ -53,9 +53,9 @@ export function Sidebar({ title, subtitle, navGroups, user, portalInitial = 'S' 
       )}>
         {/* Brand / Logo */}
         <div className="sidebar-brand flex items-center justify-between">
-          <div className="flex items-center gap-2 overflow-hidden">
-            <PrepzoLogo size="sm" variant="dark" />
-          </div>
+          <Link href="/student/dashboard" className="flex items-center py-1">
+            <PrepzoLogo size="md" variant="dark" />
+          </Link>
           <button
             onClick={() => setOpen(false)}
             className="md:hidden p-1 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors shrink-0"

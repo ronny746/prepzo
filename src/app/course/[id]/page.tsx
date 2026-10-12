@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
+import PrepzoLogo from '@/components/PrepzoLogo';
 import { 
   BookOpen, 
   Clock, 
@@ -562,8 +563,8 @@ export default function PublicCourseOverviewPage() {
       <header className="sticky top-0 inset-x-0 z-50 bg-[#0B132B] text-white shadow-md border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href="/" className="flex items-center">
-              <Image src="/prepzo-logo.png" alt="Prepzo" width={130} height={110} className="h-11 w-11 rounded-xl object-cover object-[50%_37%]" priority />
+            <Link href="/" className="flex items-center py-1">
+              <PrepzoLogo variant="light" size="sm" />
             </Link>
             <div className="hidden md:flex items-center text-xs text-gray-400 gap-2 border-l border-gray-700 pl-4">
               <span>Study Portal</span>

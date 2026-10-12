@@ -97,15 +97,10 @@ export default function AdminLogin() {
 
         {/* Logo */}
         <div className="relative z-10">
-          <div className="flex items-center gap-3.5">
-            <div className="w-14 h-14 bg-white/95 rounded-2xl flex items-center justify-center shadow-xl p-2 border border-white/30 backdrop-blur-sm">
-              <PrepzoLogo size="sm" variant="dark" showText={false} />
-            </div>
-            <div>
-              <p className="text-white font-black text-xl leading-tight tracking-tight">Prepzo</p>
-              <p className="text-emerald-400/90 text-xs font-bold tracking-wider uppercase">Admin Management Portal</p>
-            </div>
-          </div>
+          <PrepzoLogo size="xl" variant="light" />
+          <p className="text-emerald-300/90 text-xs font-bold tracking-widest uppercase mt-2">
+            Admin Management Portal
+          </p>
         </div>
 
         {/* Center Content */}

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
+import PrepzoLogo from "@/components/PrepzoLogo";
 import { ArrowRight, CheckCircle2, User, Phone, Mail, GraduationCap } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -32,8 +33,8 @@ export default function FreeTrialPage() {
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
       {/* Navbar */}
       <header className="bg-white shadow-sm border-b border-gray-200 py-4 px-6 flex items-center justify-between z-10">
-        <Link href="/">
-          <Image src="/prepzo-logo.png" alt="Prepzo" width={140} height={110} className="h-14 w-14 rounded-2xl object-cover object-[50%_37%]" />
+        <Link href="/" className="py-1">
+          <PrepzoLogo variant="dark" size="md" />
         </Link>
         <Link href="/" className="text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors">
           Back to Home

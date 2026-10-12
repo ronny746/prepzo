@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import toast from "react-hot-toast";
+import PrepzoLogo from "./PrepzoLogo";
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -332,14 +333,7 @@ export function LoginModal({ isOpen, onClose, redirectOnSuccess = true }: LoginM
                 {/* Top Logo */}
                 <div className="relative z-10">
                   <div className="flex items-center gap-3 mb-6">
-                    <Image
-                      src="/prepzo-logo.png"
-                      alt="Prepzo"
-                      width={140}
-                      height={45}
-                      className="h-9 w-auto object-contain brightness-110"
-                      priority
-                    />
+                    <PrepzoLogo variant="light" size="lg" />
                   </div>
                   <h3 className="text-2xl font-black text-white leading-tight mb-2">
                     India&apos;s Premier Learning Ecosystem

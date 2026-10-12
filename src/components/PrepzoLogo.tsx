@@ -3,17 +3,19 @@ import Image from 'next/image';
 interface PrepzoLogoProps {
   className?: string;
   variant?: 'light' | 'dark';
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   showText?: boolean;
   tagline?: string;
   badge?: string;
+  priority?: boolean;
 }
 
 const sizes = {
-  sm: { mark: 'h-8 w-8', name: 'text-xl', badge: 'text-[8px] px-1.5 py-0.5' },
-  md: { mark: 'h-10 w-10', name: 'text-2xl', badge: 'text-[9px] px-2 py-0.5' },
-  lg: { mark: 'h-12 w-12', name: 'text-3xl', badge: 'text-[10px] px-2.5 py-0.5' },
-  xl: { mark: 'h-16 w-16', name: 'text-4xl', badge: 'text-xs px-3 py-1' },
+  xs: { h: 'h-6', iconH: 'h-6', w: 116, badge: 'text-[8px] px-1.5 py-0.5', tagline: 'text-[8px]' },
+  sm: { h: 'h-8', iconH: 'h-8', w: 155, badge: 'text-[8px] px-2 py-0.5', tagline: 'text-[9px]' },
+  md: { h: 'h-9', iconH: 'h-9', w: 174, badge: 'text-[9px] px-2.5 py-0.5', tagline: 'text-[10px]' },
+  lg: { h: 'h-11', iconH: 'h-11', w: 213, badge: 'text-[10px] px-2.5 py-0.5', tagline: 'text-[11px]' },
+  xl: { h: 'h-14', iconH: 'h-14', w: 271, badge: 'text-xs px-3 py-1', tagline: 'text-xs' },
 };
 
 export default function PrepzoLogo({
@@ -23,42 +25,42 @@ export default function PrepzoLogo({
   showText = true,
   tagline,
   badge,
+  priority = true,
 }: PrepzoLogoProps) {
-  const current = sizes[size];
-  const textColor = variant === 'light' ? 'text-white' : 'text-[#005C42]';
-  const subColor = variant === 'light' ? 'text-white/80' : 'text-[#005C42]/70';
+  const current = sizes[size] || sizes.md;
+  const isLight = variant === 'light';
+
+  const logoSrc = showText
+    ? (isLight ? '/prepzo-logo-horizontal-white.png' : '/prepzo-logo-horizontal.png')
+    : '/prepzo-icon.png';
+
+  const subColor = isLight ? 'text-emerald-300/90' : 'text-[#005C42]/70';
 
   return (
     <div className={`inline-flex items-center gap-2.5 ${className}`}>
-      <div className={`${current.mark} relative shrink-0 flex items-center justify-center`} aria-hidden="true">
-        <Image
-          src="/prepzo-icon.png"
-          alt="Prepzo"
-          width={64}
-          height={64}
-          className="w-full h-full object-contain"
-          priority
-        />
-      </div>
-      {showText && (
-        <div className="flex min-w-0 flex-col leading-tight select-none">
-          <div className="flex items-center gap-2">
-            <span className={`${current.name} font-black tracking-tight ${textColor}`}>
-              prep<span className="text-[#E8A400]">zo</span>
-            </span>
-            {badge && (
-              <span className={`rounded-full border border-[#E8A400]/35 bg-[#E8A400]/10 font-extrabold uppercase tracking-wider text-[#B87900] ${current.badge}`}>
-                {badge}
-              </span>
-            )}
-          </div>
-          {tagline && (
-            <span className={`text-[10px] font-semibold tracking-wider uppercase ${subColor}`}>
-              {tagline}
+      <div className="flex flex-col">
+        <div className="inline-flex items-center gap-2.5">
+          <Image
+            src={logoSrc}
+            alt="Prepzo"
+            width={showText ? current.w : 64}
+            height={64}
+            className={`${showText ? current.h : current.iconH} w-auto object-contain shrink-0`}
+            priority={priority}
+          />
+          {badge && (
+            <span className={`rounded-full border border-[#E8A400]/40 bg-[#E8A400]/10 font-extrabold uppercase tracking-wider text-[#B87900] ${current.badge}`}>
+              {badge}
             </span>
           )}
         </div>
-      )}
+        {tagline && (
+          <span className={`font-bold tracking-widest uppercase mt-1 ${current.tagline} ${subColor}`}>
+            {tagline}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
+
