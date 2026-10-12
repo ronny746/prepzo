@@ -64,7 +64,7 @@ exports.requestOtp = async (req, res, next) => {
         }
 
         const result = await sendMobileOTP(cleanPhone);
-        const otp = process.env.STATIC_OTP || '123456';
+        const otp = result.otp || Math.floor(100000 + Math.random() * 900000).toString();
 
         // Save generated OTP to database
         await OtpModel.create({ phone: cleanPhone, otp });
@@ -111,44 +111,47 @@ exports.verifyOtp = async (req, res, next) => {
             }
         }
 
-        const isMasterOtp = String(otp).trim() === '123456';
-        if (!isRollNoBypass && !isMasterOtp) {
+        if (!isRollNoBypass) {
             // Find the OTP in DB
-            const otpRecord = await OtpModel.findOne({ phone: cleanPhone, otp: otp });
+            const otpRecord = await OtpModel.findOne({ phone: cleanPhone, otp: String(otp).trim() });
 
             if (!otpRecord) {
                 return errorResponse(res, "Invalid or expired OTP", null, 400);
             }
 
-            if (!user) {
-                if (String(requestedRole).toLowerCase() !== 'student') {
-                    return errorResponse(res, `No registered ${String(requestedRole).toLowerCase()} account was found for this mobile number.`, null, 404);
-                }
-                // A matching phone signs in; an unknown student phone starts
-                // the registration flow with a minimal profile.
-                const Institute = require('../institutes/institutes.model');
-                const defaultInstitute = await Institute.findOne();
-                
-                const defaultRole = requestedRole || 'student';
-                const defaultFirstName = defaultRole === 'parent' ? 'Parent' : (defaultRole === 'teacher' ? 'Teacher' : 'Student');
-                
-                const userFields = {
-                    firstName: defaultFirstName,
-                    lastName: '',
-                    phone: cleanPhone,
-                    role: defaultRole,
-                    instituteId: defaultInstitute ? defaultInstitute._id : null,
-                    password: Math.random().toString(36).slice(-8) + 'A1!',
-                    email: `${defaultRole}_${cleanPhone}_${Date.now()}@prepzo.com`,
-                    metadata: {
-                        isProfileIncomplete: true
-                    }
-                };
-                user = await User.create(userFields);
-            }
-
             // OTP verified successfully, remove it from DB
             await OtpModel.deleteOne({ _id: otpRecord._id });
+        }
+
+        if (!user) {
+            if (String(requestedRole).toLowerCase() !== 'student') {
+                return errorResponse(res, `No registered ${String(requestedRole).toLowerCase()} account was found for this mobile number.`, null, 404);
+            }
+            // A matching phone signs in; an unknown student phone starts
+            // the registration flow with a minimal profile.
+            const Institute = require('../institutes/institutes.model');
+            const defaultInstitute = await Institute.findOne();
+            
+            const defaultRole = requestedRole || 'student';
+            const defaultFirstName = defaultRole === 'parent' ? 'Parent' : (defaultRole === 'teacher' ? 'Teacher' : 'Student');
+            
+            const userFields = {
+                firstName: defaultFirstName,
+                lastName: '',
+                phone: cleanPhone,
+                role: defaultRole,
+                instituteId: defaultInstitute ? defaultInstitute._id : null,
+                password: Math.random().toString(36).slice(-8) + 'A1!',
+                email: `${defaultRole}_${cleanPhone}_${Date.now()}@prepzo.com`,
+                metadata: {
+                    isProfileIncomplete: true
+                }
+            };
+            user = await User.create(userFields);
+        }
+
+        if (!user) {
+            return errorResponse(res, "User account could not be found or initialized.", null, 404);
         }
 
         // Generate Session ID for single-device verification

@@ -14,7 +14,7 @@ const sendMobileOTP = async (phone) => {
     }
 
     // 2. 6-Digit random OTP generate karna
-    const generatedOtp = process.env.STATIC_OTP || '123456';
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
     // 3. Exact approved message setup karna 
     const message = `Dear User Your OTP is ${generatedOtp} for mobile number verification. It is valid for 5 minutes. Please do not share with anyone - CSOCIT`;
