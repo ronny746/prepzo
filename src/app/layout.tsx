@@ -1,0 +1,45 @@
+import type { Metadata, Viewport } from "next";
+import { Plus_Jakarta_Sans, Mulish } from "next/font/google";
+import "./globals.css";
+import { Providers } from "./providers";
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
+
+const mulish = Mulish({
+  variable: "--font-sans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800", "900"],
+});
+
+export const metadata: Metadata = {
+  title: "Prepzo | Smart prep, learn anytime anywhere",
+  description: "Prepzo helps learners prepare with live classes, study material, practice tests and personalised academic support.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html
+      lang="en-IN"
+      className={`${mulish.variable} ${plusJakartaSans.variable} h-full antialiased`}
+    >
+      <body className="min-h-full flex flex-col font-sans bg-background text-foreground overflow-x-hidden w-full max-w-full">
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}

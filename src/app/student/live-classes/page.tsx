@@ -1,0 +1,581 @@
+"use client";
+
+import { useState, useEffect, useMemo } from 'react';
+import { Calendar, Video, PlayCircle, Grid, ArrowLeft, Users, Clock, Radio, Sparkles, Download, Film, X } from 'lucide-react';
+import { PageHeader } from '@/components/layout/index.jsx';
+import { Card } from '@/components/ui/index.jsx';
+import { Button } from '@/components/ui/Button.jsx';
+import { studentAPI } from '@/api/index.js';
+import toast from 'react-hot-toast';
+import { useRouter } from 'next/navigation';
+
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+export default function StudentLiveClassesPage() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [batches, setBatches] = useState([]);
+  const [selectedBatchId, setSelectedBatchId] = useState('');
+  const [gridSchedules, setGridSchedules] = useState([]);
+  const [activeClasses, setActiveClasses] = useState([]);
+  const [recordings, setRecordings] = useState([]);
+  const [selectedRecording, setSelectedRecording] = useState<any>(null);
+  const [timeColumns, setTimeColumns] = useState([]); // [{startTime, endTime}]
+  
+  const [showCellModal, setShowCellModal] = useState(false);
+  const [cellData, setCellData] = useState({
+    scheduleId: null,
+    dayOfWeek: 0,
+    startTime: '',
+    endTime: '',
+    subjectName: '',
+    teacherName: ''
+  });
+
+  const todayIndex = new Date().getDay();
+  const todayFormatted = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+
+  const todayClasses = useMemo(() => {
+    return (gridSchedules || [])
+      .filter((s: any) => Number(s.dayOfWeek) === todayIndex)
+      .sort((a: any, b: any) => (a.startTime || '').localeCompare(b.startTime || ''));
+  }, [gridSchedules, todayIndex]);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [batchRes, scheduleRes, liveRes, recRes, completedZoomRes] = await Promise.all([
+        studentAPI.getMyBatches().catch(() => ({ data: { data: [] } })),
+        studentAPI.getMySchedule().catch(() => ({ data: { data: [] } })),
+        studentAPI.getLiveClasses().catch(() => ({ data: { data: [] } })),
+        studentAPI.getRecordings().catch(() => ({ data: { data: [] } })),
+        studentAPI.getLiveClasses({ status: 'COMPLETED' }).catch(() => ({ data: { data: [] } }))
+      ]);
+      setBatches(batchRes.data?.data || []);
+      const scheds = scheduleRes.data?.data || [];
+      setGridSchedules(scheds);
+      setActiveClasses(liveRes.data?.data || []);
+
+      const localRecs = recRes.data?.data || [];
+      const zoomRecs = (completedZoomRes.data?.data || [])
+        .filter((c: any) => c.recordingUrl)
+        .map((c: any) => ({
+          _id: c._id,
+          roomCode: c.roomCode || c.meetingId || 'ZOOM',
+          downloadUrl: c.recordingUrl,
+          createdAt: c.createdAt || c.updatedAt,
+          isZoom: true,
+          topic: c.classScheduleId?.subjectId?.name || 'Zoom Live Class'
+        }));
+
+      setRecordings([...localRecs, ...zoomRecs]);
+
+      // Extract unique time columns for all schedules initially
+      updateTimeColumns(scheds, '');
+    } catch (error) {
+      toast.error('Failed to load classes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateTimeColumns = (scheds, batchId) => {
+    const filteredScheds = batchId ? scheds.filter(s => {
+      const bId = s.batchId?._id || s.batchId;
+      return bId === batchId;
+    }) : scheds;
+    
+    const cols = [];
+    const colMap = new Set();
+    filteredScheds.forEach(s => {
+      const key = `${s.startTime}-${s.endTime}`;
+      if (!colMap.has(key)) {
+        colMap.add(key);
+        cols.push({ startTime: s.startTime, endTime: s.endTime });
+      }
+    });
+    // Sort columns by start time
+    cols.sort((a, b) => a.startTime.localeCompare(b.startTime));
+    setTimeColumns(cols);
+  };
+
+  useEffect(() => {
+    if (gridSchedules.length > 0) {
+      updateTimeColumns(gridSchedules, selectedBatchId);
+    }
+  }, [selectedBatchId, gridSchedules]);
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handleJoinClass = (liveClass) => {
+    const link = liveClass.meetingLink || liveClass.startUrl;
+    if (!link) {
+      toast.error("No meeting link available");
+      return;
+    }
+
+    if (link.includes('zoom.us') || (!link.includes('/class/') && link.startsWith('http'))) {
+      window.open(link, '_blank');
+    } else if (link.includes('/class/')) {
+      const roomCode = link.split('/class/')[1]?.split(/[?#]/)[0];
+      router.push(`/class/${roomCode}`);
+    } else {
+      window.open(link, '_blank');
+    }
+  };
+
+  const handleCellClick = (dayIndex, col) => {
+    const cellSchedule = gridSchedules.find(s => s.dayOfWeek === dayIndex && s.startTime === col.startTime && s.endTime === col.endTime);
+    if (cellSchedule) {
+      setCellData({
+        scheduleId: cellSchedule._id,
+        dayOfWeek: dayIndex,
+        startTime: col.startTime,
+        endTime: col.endTime,
+        subjectName: cellSchedule.subjectId?.name || 'No Subject',
+        teacherName: `${cellSchedule.teacherId?.firstName} ${cellSchedule.teacherId?.lastName}`
+      });
+      setShowCellModal(true);
+    }
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in pb-10">
+      <PageHeader
+        title="Live Classes & Timetable"
+        subtitle="View your daily timetable and join live lectures"
+        breadcrumbs={['Home', 'Academics', 'Live Classes']}
+      />
+
+      {/* TODAY'S TIMETABLE AT TOP */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-950/50 text-[#1a7a35]">
+              <Clock size={18} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-surface-900 dark:text-white flex items-center gap-2">
+                Today's Timetable
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-[#1a7a35]">
+                  {DAYS[todayIndex]}
+                </span>
+              </h2>
+              <p className="text-xs text-surface-500">{todayFormatted}</p>
+            </div>
+          </div>
+        </div>
+
+        {todayClasses.length === 0 ? (
+          <div className="p-4 rounded-2xl bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-800 flex items-center gap-3 text-xs text-surface-500">
+            <Sparkles size={16} className="text-[#1a7a35]" />
+            <span>No live classes scheduled for today ({DAYS[todayIndex]}). Browse batches below to see your weekly timetable.</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {todayClasses.map((item: any) => {
+              const activeClass = activeClasses.find((c: any) => {
+                const cId = c.classScheduleId?._id || c.classScheduleId;
+                return cId === item._id && c.status === 'ONGOING';
+              });
+              const isOngoing = Boolean(activeClass);
+              const teacherName = item.teacherId ? `${item.teacherId.firstName} ${item.teacherId.lastName || ''}`.trim() : 'Assigned Faculty';
+              const subjectTitle = item.subjectId?.name || 'Class Subject';
+              const batchName = item.batchId?.name || 'Assigned Batch';
+
+              return (
+                <div
+                  key={item._id}
+                  className={`p-4 rounded-2xl border flex flex-col justify-between transition-all ${
+                    isOngoing
+                      ? 'bg-gradient-to-br from-emerald-50 via-white to-emerald-50/40 dark:from-emerald-950/40 dark:to-surface-900 border-emerald-400 ring-2 ring-emerald-400/20 shadow-sm'
+                      : 'bg-white dark:bg-surface-900 border-surface-200 dark:border-surface-800'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-800 dark:text-surface-200 flex items-center gap-1">
+                        <Clock size={12} className="text-[#1a7a35]" /> {item.startTime} - {item.endTime}
+                      </span>
+                      {isOngoing && (
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-lg bg-emerald-500 text-white flex items-center gap-1 animate-pulse">
+                          <Radio size={10} /> LIVE NOW
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-bold text-sm text-surface-900 dark:text-white truncate">{subjectTitle}</h3>
+                    <p className="text-xs text-surface-500 mt-0.5 truncate">{batchName} • {teacherName}</p>
+                  </div>
+                  <div className="mt-3">
+                    {isOngoing ? (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        className="w-full font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => handleJoinClass(activeClass)}
+                      >
+                        <PlayCircle size={14} className="mr-1.5" /> Join Live Now
+                      </Button>
+                    ) : (
+                      <div className="text-[11px] text-surface-400 text-center font-medium py-1">
+                        Scheduled
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {!selectedBatchId ? (
+        <div className="space-y-4 pt-2">
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <Users className="text-primary-500" /> Select Batch for Weekly Timetable
+          </h2>
+          {batches.length === 0 ? (
+            <div className="p-8 text-center text-surface-500">No batches assigned to you yet.</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {batches.map(batch => {
+                // Find if this batch has any ongoing class
+                const active = activeClasses.find(c => {
+                  const bId = c.classScheduleId?.batchId?._id || c.classScheduleId?.batchId;
+                  return bId === batch._id && c.status === 'ONGOING';
+                });
+
+                return (
+                  <Card key={batch._id} className="p-6 hover:shadow-lg transition-shadow cursor-pointer flex flex-col justify-between" onClick={() => setSelectedBatchId(batch._id)}>
+                    <div>
+                      <h3 className="text-lg font-bold text-surface-800 dark:text-white mb-2">{batch.name}</h3>
+                      {batch.section && <p className="text-sm text-surface-500 mb-4">Section: {batch.section}</p>}
+                    </div>
+                    {active ? (
+                      <Button 
+                        variant="success" 
+                        className="w-full mt-4"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleJoinClass(active);
+                        }}
+                      >
+                        <PlayCircle size={18} className="mr-2" /> Join Live Class Now
+                      </Button>
+                    ) : (
+                      <Button variant="outline" className="w-full mt-4">
+                        <Calendar size={18} className="mr-2" /> View Timetable
+                      </Button>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        <Card className="p-5 overflow-x-auto">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-4 border-b border-surface-100 dark:border-surface-800">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="sm" onClick={() => setSelectedBatchId("")} className="hover:bg-surface-100 dark:hover:bg-surface-800">
+                <ArrowLeft size={18} className="mr-2" /> Back
+              </Button>
+              <h2 className="text-xl font-bold flex items-center gap-2">
+                <Grid className="text-primary-500" /> 
+                {batches.find(b => b._id === selectedBatchId)?.name}
+                <span className="text-sm font-normal text-surface-500 ml-2">Weekly Timetable</span>
+              </h2>
+            </div>
+            {(() => {
+              const activeBatchClass = activeClasses.find(c => {
+                const bId = c.classScheduleId?.batchId?._id || c.classScheduleId?.batchId;
+                return bId === selectedBatchId && c.status === 'ONGOING';
+              });
+              if (activeBatchClass) {
+                return (
+                  <Button 
+                    variant="success" 
+                    onClick={() => handleJoinClass(activeBatchClass)}
+                    className="shadow-lg shadow-success-500/20"
+                  >
+                    <PlayCircle size={18} className="mr-2" /> Join Live Class Now
+                  </Button>
+                );
+              }
+              return null;
+            })()}
+          </div>
+
+          <div className="min-w-[800px]">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className="p-3 border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 font-semibold text-left w-32 sticky left-0 z-10">Day / Time</th>
+                {timeColumns.map((col, i) => (
+                  <th key={i} className="p-3 border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 font-semibold text-center min-w-[150px]">
+                    {col.startTime} - {col.endTime}
+                  </th>
+                ))}
+                {timeColumns.length === 0 && (
+                  <th className="p-3 border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 font-normal text-surface-500 italic">
+                    No classes scheduled yet.
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {DAYS.map((day, dayIndex) => (
+                <tr key={dayIndex}>
+                  <td className="p-3 border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 font-medium sticky left-0 z-10">
+                    {day}
+                  </td>
+                  {timeColumns.map((col, colIndex) => {
+                    const cellSchedule = gridSchedules.find(s => {
+                      const bId = s.batchId?._id || s.batchId;
+                      return bId === selectedBatchId && s.dayOfWeek === dayIndex && s.startTime === col.startTime && s.endTime === col.endTime;
+                    });
+                    const active = cellSchedule && activeClasses.find(c => {
+                      const cId = c.classScheduleId?._id || c.classScheduleId;
+                      return cId === cellSchedule._id && c.status === 'ONGOING';
+                    });
+                    return (
+                      <td 
+                        key={colIndex} 
+                        onClick={() => handleCellClick(dayIndex, col)}
+                        className={`p-2 border border-surface-200 dark:border-surface-700 text-center transition-colors relative ${cellSchedule ? 'cursor-pointer hover:bg-primary-50 dark:hover:bg-primary-900/20' : ''}`}
+                      >
+                        {cellSchedule ? (
+                          <div className={`p-2 rounded text-sm h-full flex flex-col justify-center ${active ? 'bg-success-100 text-success-800 border border-success-300' : 'bg-primary-100 dark:bg-primary-900/40 text-primary-800 dark:text-primary-100'}`}>
+                            <div className="font-semibold truncate">{cellSchedule.subjectId?.name || 'No Subject'}</div>
+                            <div className="text-xs opacity-80 truncate mb-1">{cellSchedule.teacherId?.firstName} {cellSchedule.teacherId?.lastName}</div>
+                            {active && (
+                              <Button 
+                                size="sm" 
+                                variant="success" 
+                                className="w-full mt-2" 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleJoinClass(active);
+                                }}
+                              >
+                                <PlayCircle size={14} className="mr-1"/> Join
+                              </Button>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="h-12 flex items-center justify-center"></div>
+                        )}
+                      </td>
+                    );
+                  })}
+                  {timeColumns.length === 0 && (
+                    <td className="p-3 border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/50"></td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      )}
+
+      {/* RECORDED LECTURES SECTION */}
+      <section className="space-y-4 pt-4 border-t border-surface-200 dark:border-surface-800">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-xl bg-violet-100 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400">
+              <Film size={20} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-surface-900 dark:text-white flex items-center gap-2">
+                Recorded Class Lectures
+                {recordings.length > 0 && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-950/60 border border-violet-200 dark:border-violet-800 text-violet-600 dark:text-violet-400">
+                    {recordings.length} Recorded
+                  </span>
+                )}
+              </h2>
+              <p className="text-xs text-surface-500">Watch or download past live class recordings anytime</p>
+            </div>
+          </div>
+        </div>
+
+        {recordings.length === 0 ? (
+          <div className="p-6 rounded-2xl bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-800 text-center text-xs text-surface-500">
+            No class recordings available yet. Automatically recorded lectures will appear here once completed!
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {recordings.map((rec: any) => {
+              const formattedDate = new Date(rec.createdAt).toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              });
+
+              return (
+                <div
+                  key={rec._id}
+                  className="p-4 rounded-2xl bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-800 hover:shadow-md transition-all flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-extrabold px-2.5 py-1 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20">
+                        ROOM: {rec.roomCode}
+                      </span>
+                      <span className="text-[11px] text-surface-400 font-medium">
+                        {formattedDate}
+                      </span>
+                    </div>
+                    <h3 className="font-bold text-sm text-surface-900 dark:text-white mt-1">
+                      Live Class Recording
+                    </h3>
+                    <p className="text-xs text-surface-500 mt-0.5">MP4 High Quality Video</p>
+                  </div>
+
+                  <div className="mt-4 flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      className="flex-1 font-bold bg-violet-600 hover:bg-violet-700 text-white"
+                      onClick={() => setSelectedRecording(rec)}
+                    >
+                      <PlayCircle size={15} className="mr-1.5" /> Play Video
+                    </Button>
+                    <a
+                      href={rec.downloadUrl}
+                      download
+                      className="p-2 rounded-xl bg-surface-100 hover:bg-surface-200 dark:bg-surface-800 dark:hover:bg-surface-700 text-surface-700 dark:text-surface-200 transition"
+                      title="Download MP4"
+                    >
+                      <Download size={16} />
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* VIDEO PLAYER MODAL */}
+      {selectedRecording && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-surface-900 rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-surface-700 flex flex-col">
+            <div className="p-4 border-b border-surface-800 flex items-center justify-between bg-surface-950">
+              <div className="flex items-center gap-2">
+                <Film className="text-violet-400" size={18} />
+                <h3 className="font-bold text-white text-sm">
+                  Class Recording ({selectedRecording.roomCode})
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedRecording(null)}
+                className="p-1.5 rounded-full hover:bg-surface-800 text-surface-400 hover:text-white transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="relative aspect-video bg-black flex items-center justify-center">
+              {selectedRecording.downloadUrl?.startsWith('http') && !selectedRecording.downloadUrl?.includes('/api/recordings/') ? (
+                <div className="p-8 text-center space-y-4">
+                  <div className="p-4 rounded-2xl bg-violet-950/40 border border-violet-800/50 max-w-md mx-auto">
+                    <Film size={36} className="text-violet-400 mx-auto mb-2 animate-bounce" />
+                    <h4 className="text-white font-bold text-base">Zoom Cloud Recording</h4>
+                    <p className="text-xs text-surface-400 mt-1">This class lecture is hosted on Zoom Cloud. Click below to watch the full recording.</p>
+                  </div>
+                  <a
+                    href={selectedRecording.downloadUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-sm transition shadow-lg shadow-violet-900/50"
+                  >
+                    <PlayCircle size={18} /> Open & Watch on Zoom Cloud
+                  </a>
+                </div>
+              ) : (
+                <video
+                  controls
+                  autoPlay
+                  className="w-full h-full object-contain"
+                  src={selectedRecording.downloadUrl}
+                >
+                  Your browser does not support HTML5 video playback.
+                </video>
+              )}
+            </div>
+
+            <div className="p-4 bg-surface-950 flex items-center justify-between border-t border-surface-800">
+              <span className="text-xs text-surface-400">
+                Recorded on {new Date(selectedRecording.createdAt).toLocaleString()}
+              </span>
+              <a
+                href={selectedRecording.downloadUrl}
+                download
+                className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-lg shadow-violet-900/30"
+              >
+                <Download size={14} /> Download MP4
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Class Details Modal */}
+      {showCellModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-surface-800 rounded-2xl w-full max-w-sm p-6 text-center relative">
+             <button onClick={() => setShowCellModal(false)} className="absolute top-4 right-4 text-surface-400 hover:text-surface-600">×</button>
+             <h2 className="text-xl font-bold mb-2">{cellData.subjectName}</h2>
+             <p className="text-surface-500 mb-6">by {cellData.teacherName}</p>
+             
+             <div className="bg-surface-50 dark:bg-surface-900 p-4 rounded-lg mb-6 flex justify-around">
+               <div>
+                 <div className="text-xs text-surface-400">Day</div>
+                 <div className="font-semibold">{DAYS[cellData.dayOfWeek]}</div>
+               </div>
+               <div>
+                 <div className="text-xs text-surface-400">Time</div>
+                 <div className="font-semibold">{cellData.startTime} - {cellData.endTime}</div>
+               </div>
+             </div>
+
+             {(() => {
+               const active = activeClasses.find(c => {
+                 const cId = c.classScheduleId?._id || c.classScheduleId;
+                 return cId === cellData.scheduleId && c.status === 'ONGOING';
+               });
+               if (active) {
+                 return (
+                   <Button variant="success" className="w-full" icon={PlayCircle} onClick={() => {
+                     setShowCellModal(false);
+                     handleJoinClass(active);
+                   }}>
+                     Join Live Class Now
+                   </Button>
+                 );
+               } else {
+                  return (
+                    <div className="text-surface-500 italic text-sm">
+                      {cellData.dayOfWeek === new Date().getDay() 
+                        ? "Teacher hasn't started this class yet." 
+                        : "This class is not scheduled for today."}
+                    </div>
+                  );
+               }
+             })()}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
