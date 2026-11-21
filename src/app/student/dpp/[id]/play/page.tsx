@@ -303,6 +303,13 @@ export default function DPPPlayer() {
                       <div className="font-bold text-gray-900">
                         {formatTime(currentAnswer?.timeSpentSeconds || 0)}
                       </div>
+                      {(currentAnswer?.timeSpentSeconds || 0) < 10 ? (
+                        <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-800 border border-rose-200">Under 10s: possible guess / not read</span>
+                      ) : (currentAnswer?.timeSpentSeconds || 0) > 300 ? (
+                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800 border border-amber-200">Over 5m: time-heavy</span>
+                      ) : (
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800 border border-emerald-200">Normal time</span>
+                      )}
                     </div>
                   </div>
                 )}
