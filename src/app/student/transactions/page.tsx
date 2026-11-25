@@ -15,16 +15,50 @@ import {
   AlertCircle,
   ArrowRight,
   Sparkles,
-  Calendar
+  Calendar,
+  Download
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 import { studentAPI } from '@/api/student.js';
 
 export default function StudentTransactionsPage() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [dues, setDues] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const isPaid = (status: string) => status === 'SUCCESS' || status === 'PAID';
+
+  const downloadReceipt = async (txn: { _id?: string; transactionId?: string }) => {
+    if (!txn?._id || downloadingId) return;
+    setDownloadingId(txn._id);
+    try {
+      const res = await studentAPI.downloadReceipt(txn._id);
+      const disposition = String(res.headers?.['content-disposition'] || '');
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const fileName = match?.[1] || t('student.transactions.receipt.fileName', { ref: String(txn.transactionId || txn._id).slice(-8) });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      toast.success(t('student.transactions.receipt.downloaded'));
+    } catch (error) {
+      let message = t('student.transactions.receipt.error');
+      const data = (error as { response?: { data?: unknown } })?.response?.data;
+      if (data instanceof Blob) {
+        try { message = JSON.parse(await data.text())?.message || message; } catch { /* keep default */ }
+      }
+      toast.error(message);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -274,6 +308,7 @@ export default function StudentTransactionsPage() {
                   <th className="px-6 py-4 text-[11px] font-black text-surface-400 uppercase tracking-widest">Transaction ID & Method</th>
                   <th className="px-6 py-4 text-[11px] font-black text-surface-400 uppercase tracking-widest">Date</th>
                   <th className="px-6 py-4 text-[11px] font-black text-surface-400 uppercase tracking-widest">Status</th>
+                  <th className="px-6 py-4 text-[11px] font-black text-surface-400 uppercase tracking-widest text-right">{t('student.transactions.receipt.column')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-100 dark:divide-surface-800">
@@ -342,6 +377,28 @@ export default function StudentTransactionsPage() {
                           <Clock size={14} className="text-amber-600 dark:text-amber-400" />
                           <span className="text-[10px] font-black text-amber-700 dark:text-amber-300 uppercase tracking-wider">PENDING</span>
                         </div>
+                      )}
+                    </td>
+
+                    {/* Receipt */}
+                    <td className="px-6 py-4 text-right">
+                      {isPaid(txn.status) ? (
+                        <button
+                          type="button"
+                          onClick={() => downloadReceipt(txn)}
+                          disabled={downloadingId === txn._id}
+                          title={t('student.transactions.receipt.tooltip')}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#025036] hover:bg-[#03643f] dark:bg-white dark:hover:bg-surface-100 text-white dark:text-[#025036] text-xs font-bold shadow-sm ring-1 ring-[#E5A00D]/40 transition-all disabled:opacity-60 disabled:cursor-wait whitespace-nowrap"
+                        >
+                          {downloadingId === txn._id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Download size={14} className="text-[#E5A00D]" />
+                          )}
+                          <span>{downloadingId === txn._id ? t('student.transactions.receipt.preparing') : t('student.transactions.receipt.button')}</span>
+                        </button>
+                      ) : (
+                        <span className="text-[11px] font-semibold text-surface-300 dark:text-surface-600">—</span>
                       )}
                     </td>
                   </tr>

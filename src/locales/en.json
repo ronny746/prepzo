@@ -1,0 +1,41 @@
+{
+  "common": {
+    "actions": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "retry": "Try again"
+    },
+    "errors": {
+      "generic": "Something went wrong. Please try again."
+    }
+  },
+  "admin": {
+    "settings": {
+      "supportContact": {
+        "title": "Support contact",
+        "description": "Shown to students in the app help section. Leave a field empty to hide it.",
+        "phone": "Support phone",
+        "phonePlaceholder": "e.g. +919876543210",
+        "whatsapp": "WhatsApp number",
+        "whatsappPlaceholder": "e.g. +919876543210",
+        "email": "Support email",
+        "emailPlaceholder": "e.g. help@example.com",
+        "website": "Website",
+        "websitePlaceholder": "e.g. https://example.com"
+      }
+    }
+  },
+  "student": {
+    "transactions": {
+      "receipt": {
+        "column": "Receipt",
+        "button": "Receipt",
+        "preparing": "Preparing…",
+        "tooltip": "Download PDF receipt",
+        "downloaded": "Receipt downloaded",
+        "error": "Could not download the receipt. Please try again.",
+        "fileName": "Prepzo-Receipt-{ref}.pdf"
+      }
+    }
+  }
+}

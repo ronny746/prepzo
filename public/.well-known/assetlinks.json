@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.app.prepzo",
+      "sha256_cert_fingerprints": [
+        "A1:5B:FD:B1:F5:45:04:7F:61:E0:4B:88:04:8C:D0:A4:13:C0:F0:F4:50:0D:CE:B6:37:C4:93:92:90:25:2E:E3"
+      ]
+    }
+  }
+]
