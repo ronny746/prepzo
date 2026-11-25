@@ -54,7 +54,9 @@ const questionBankSchema = new mongoose.Schema({
   totalMarks: {
     type: Number,
     default: 0
-  }
+  },
+  sourceSystem: { type: String, trim: true, index: true },
+  sourcePaperId: { type: String, trim: true, index: true }
 }, { timestamps: true });
 
 // Avoid OverwriteModelError

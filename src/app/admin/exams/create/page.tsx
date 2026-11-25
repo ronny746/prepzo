@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 
 import { Save, ArrowLeft, Upload, Search, Settings, FileText, CheckCircle, Folder, FolderOpen, ChevronRight, PlusCircle, Check } from 'lucide-react';
 import { PageHeader } from '@/components/layout/index.jsx';
@@ -14,6 +14,9 @@ import toast from 'react-hot-toast';
 export default function ExamBuilder() {
   const { id } = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialFullPaperId = searchParams.get('fullPaperId') || '';
+  const autoAddedPaper = useRef(false);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('settings'); // settings | questions
 
@@ -22,6 +25,8 @@ export default function ExamBuilder() {
     title: '',
     description: '',
     examType: 'INTERNAL',
+    accessType: 'FREE',
+    price: 0,
     assignedClasses: [],
     settings: {
       startTime: '',
@@ -72,6 +77,16 @@ export default function ExamBuilder() {
       fetchExam();
     }
   }, [id]);
+
+  // When opened from a question-bank card, start with that paper selected and
+  // load all of its questions so the exam can be created in one step.
+  useEffect(() => {
+    if (id || !initialFullPaperId || autoAddedPaper.current || !fullPapers.some(p => p._id === initialFullPaperId)) return;
+    autoAddedPaper.current = true;
+    setQuestionSourceTab('FULL_PAPERS');
+    setSelectedFullPaperId(initialFullPaperId);
+    handleAddFullPaper(initialFullPaperId);
+  }, [id, initialFullPaperId, fullPapers]);
 
   const fetchFullPapers = async () => {
     try {
@@ -197,6 +212,8 @@ export default function ExamBuilder() {
         title: data.exam.title,
         description: data.exam.description || '',
         examType: data.exam.examType || 'INTERNAL',
+        accessType: data.exam.accessType || 'FREE',
+        price: data.exam.price || 0,
         assignedClasses: data.exam.assignedBatches?.map(c => typeof c === 'object' ? c._id : c) || [],
         settings: {
           startTime: formatDateForInput(data.exam.settings.startTime),
@@ -429,6 +446,28 @@ export default function ExamBuilder() {
           </div>
           <div className="space-y-4">
             <h3 className="text-lg font-semibold border-b pb-2">Exam Visibility & Assignment</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="block text-sm font-medium text-gray-700">Access type
+                <select
+                  value={examData.accessType}
+                  onChange={(e) => setExamData({ ...examData, accessType: e.target.value, price: e.target.value === 'FREE' ? 0 : examData.price })}
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white p-3 text-sm focus:border-primary-500 focus:ring-primary-500"
+                >
+                  <option value="FREE">Free — login/enrolment required</option>
+                  <option value="PAID">Paid — payment required</option>
+                </select>
+              </label>
+              {examData.accessType === 'PAID' && (
+                <Input
+                  label="Exam price (₹)"
+                  type="number"
+                  min="0"
+                  value={examData.price}
+                  onChange={(e) => setExamData({ ...examData, price: Number(e.target.value) || 0 })}
+                />
+              )}
+            </div>
             
             <div className="flex gap-4">
               <label className={`flex-1 p-4 border rounded-xl cursor-pointer transition-all ${examData.examType === 'INTERNAL' ? 'border-primary-500 bg-primary-50' : 'hover:border-gray-300'}`}>

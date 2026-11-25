@@ -284,7 +284,7 @@ export default function PublicCourseOverviewPage() {
 
   // Check enrollment
   useEffect(() => {
-    if (!id || !user) return;
+    if (!id || !user || !course?._id) return;
     const token = localStorage.getItem('token');
     if (!token) return;
 
@@ -295,7 +295,7 @@ export default function PublicCourseOverviewPage() {
       .then(data => {
         if (data.success && data.data) {
           const isUserEnrolled = data.data.some((batch: any) => 
-            batch.courseId?._id === id || batch.courseId === id
+            batch.courseId?._id === course._id || batch.courseId === course._id
           );
           if (isUserEnrolled) {
             setIsEnrolled(true);
@@ -303,7 +303,7 @@ export default function PublicCourseOverviewPage() {
         }
       })
       .catch(console.error);
-  }, [id, user]);
+  }, [id, user, course?._id]);
 
   // Load Exams for test series
   useEffect(() => {
@@ -581,6 +581,12 @@ export default function PublicCourseOverviewPage() {
               className="text-xs font-semibold text-gray-300 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10 hidden sm:block"
             >
               Back to Home
+            </button>
+            <button
+              onClick={() => router.push('/explore-courses')}
+              className="text-xs font-semibold text-gray-300 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10 hidden sm:block"
+            >
+              Explore Courses
             </button>
             
             {user ? (

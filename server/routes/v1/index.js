@@ -47,6 +47,7 @@ const publicBannersRouter = require('../../modules/banners/public.banners.routes
 const recycleBinRouter = require('../../modules/recycle-bin/recycle-bin.routes');
 const performanceFlagsRouter = require('../../modules/performance-flags/performance-flags.routes');
 const operationsRouter = require('../../modules/operations/operations.routes');
+const prepzoPaperImportRouter = require('../../modules/integrations/prepzo-paper-import.routes');
 
 // Mount routes
 router.use('/recycle-bin', recycleBinRouter);
@@ -77,6 +78,9 @@ router.use('/ptm-booking', ptmBookingRouter);
 router.use('/analytics-reports', analyticsReportsRouter);
 router.use('/inventory', inventoryRouter);
 router.use('/security-audit', securityAuditRouter);
+// The bank-to-portal import authenticates with its dedicated shared secret;
+// mount it before the faculty-only integrations router (which requires JWT).
+router.use('/integrations/prepzo-paper-import', prepzoPaperImportRouter);
 router.use('/integrations', integrationsRouter);
 router.use('/system-config', systemConfigRouter);
 router.use('/backups', backupsRouter);

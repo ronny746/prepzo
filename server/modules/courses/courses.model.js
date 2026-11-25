@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const courseSchema = new mongoose.Schema({
   instituteId: { type: mongoose.Schema.Types.ObjectId, ref: 'Institute', required: true },
   name: { type: String, required: true },
+  slug: { type: String, trim: true, lowercase: true, index: true },
   description: { type: String },
   tag: { type: String },
   fee: { type: Number },
@@ -54,5 +55,6 @@ const courseSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 courseSchema.index({ instituteId: 1, name: 1 }, { unique: true });
+courseSchema.index({ instituteId: 1, slug: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.models.Course || mongoose.model('Course', courseSchema);

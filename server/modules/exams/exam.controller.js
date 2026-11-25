@@ -209,12 +209,14 @@ const getQuestionAverageTimes = async (examId) => {
 
 exports.createExam = async (req, res) => {
   try {
-    const { title, description, examType, assignedBatches, settings, security } = req.body;
+    const { title, description, examType, accessType, price, assignedBatches, settings, security } = req.body;
     
     const exam = new Exam({
       title,
       description,
       examType,
+      accessType: accessType || 'FREE',
+      price: accessType === 'PAID' ? Number(price) || 0 : 0,
       assignedBatches,
       settings,
       security,
@@ -237,10 +239,10 @@ exports.createExam = async (req, res) => {
 
 exports.updateExam = async (req, res) => {
   try {
-    const { title, description, examType, assignedBatches, settings, security, status } = req.body;
+    const { title, description, examType, accessType, price, assignedBatches, settings, security, status } = req.body;
     const exam = await Exam.findOneAndUpdate(
       { _id: req.params.id, institute: req.user.instituteId },
-      { title, description, examType, assignedBatches, settings, security, status },
+      { title, description, examType, accessType: accessType || 'FREE', price: accessType === 'PAID' ? Number(price) || 0 : 0, assignedBatches, settings, security, status },
       { new: true }
     );
     if (!exam) return res.status(404).json({ success: false, message: 'Exam not found' });

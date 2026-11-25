@@ -7,10 +7,11 @@ import { adminAPI } from '@/api/index.js';
 import { PageHeader } from '@/components/layout/index.jsx';
 import { Card, ActionMenu } from '@/components/ui/index.jsx';
 import { Button } from '@/components/ui/Button.jsx';
-import { Folder, FolderOpen, FileText, ChevronRight, Upload, Plus, Trash2, ArrowLeft, Edit2, Edit, Eye, EyeOff } from 'lucide-react';
+import { Folder, FolderOpen, FileText, FileCheck, ChevronRight, Upload, Plus, Trash2, ArrowLeft, Edit2, Edit, Eye, EyeOff } from 'lucide-react';
 import { DeleteModal, Modal, ModalHeader, ModalBody, ModalFooter, ConfirmModal } from '@/components/modals/index.jsx';
 import toast from 'react-hot-toast';
 import { AdvancedEditor } from '@/components/ui/AdvancedEditor';
+import MathContent from '@/components/MathContent';
 
 export default function QuestionBanks() {
   const { isDeveloperMode } = useDeveloperStore();
@@ -22,7 +23,7 @@ export default function QuestionBanks() {
   const [topicQuestions, setTopicQuestions] = useState([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   
-  const [activeTab, setActiveTab] = useState('SUBJECT_FOLDERS'); // 'SUBJECT_FOLDERS' | 'FULL_PAPERS'
+  const [activeTab, setActiveTab] = useState('SUBJECT_FOLDERS'); // 'SUBJECT_FOLDERS' | 'FULL_PAPERS' | 'BANK_EXAMS'
   const [fullPapers, setFullPapers] = useState([]);
   const [loadingFullPapers, setLoadingFullPapers] = useState(false);
 
@@ -462,6 +463,16 @@ export default function QuestionBanks() {
             >
               Full Papers
             </button>
+            <button
+              className={`px-6 py-2 rounded-md font-medium text-sm transition-all ${
+                activeTab === 'BANK_EXAMS'
+                  ? 'bg-white shadow text-primary-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+              onClick={() => { setActiveTab('BANK_EXAMS'); setFullPaperPath([]); }}
+            >
+              Bank Exam
+            </button>
           </div>
         )}
 
@@ -612,6 +623,9 @@ export default function QuestionBanks() {
   };
 
   const renderFullPapersTab = () => {
+    const papersToShow = activeTab === 'BANK_EXAMS'
+      ? fullPapers.filter((paper: any) => paper.sourceSystem === 'arkebank')
+      : fullPapers;
     if (fullPaperPath.length === 0) {
       return (
         <div className="space-y-4">
@@ -619,7 +633,7 @@ export default function QuestionBanks() {
             <p className="text-gray-500">Loading full papers...</p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {fullPapers.map(paper => (
+              {papersToShow.map(paper => (
                 <Card 
                   key={paper._id} 
                   className="p-4 border-l-4 border-l-blue-500 relative group cursor-pointer hover:shadow-md transition-shadow"
@@ -627,6 +641,7 @@ export default function QuestionBanks() {
                 >
                   <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
                     <ActionMenu actions={[
+                      { label: 'Create Exam', icon: FileCheck, onClick: (e) => { e.stopPropagation(); router.push(`/admin/exams/create?fullPaperId=${paper._id}`); } },
                       { label: 'Edit', icon: Edit, onClick: (e) => handleRenameFullPaper(e, paper._id, paper.title) },
                       { 
                         label: 'Move to Recycle Bin', 
@@ -664,7 +679,7 @@ export default function QuestionBanks() {
                 className="border-2 border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center text-gray-500 hover:bg-gray-50 hover:text-blue-600 hover:border-blue-300 cursor-pointer transition-colors min-h-[120px]"
               >
                 <Plus className="w-8 h-8 mb-2" />
-                <span className="font-medium">Create Full Paper Folder</span>
+                <span className="font-medium">{activeTab === 'BANK_EXAMS' ? 'Create Bank Exam Folder' : 'Create Full Paper Folder'}</span>
               </div>
             </div>
           )}
@@ -672,7 +687,7 @@ export default function QuestionBanks() {
       );
     }
 
-    if (fullPaperPath.length === 1 && fullPaperData) {
+    if (fullPaperPath.length === 1 && fullPaperData && activeTab !== 'BANK_EXAMS') {
       // Level 1: List subjects in the full paper
       const questions = fullPaperData.questions || [];
       const subjectsMap = {};
@@ -795,16 +810,18 @@ export default function QuestionBanks() {
       );
     }
 
-    if (fullPaperPath.length === 4 && fullPaperData) {
+    if ((fullPaperPath.length === 4 || (activeTab === 'BANK_EXAMS' && fullPaperPath.length === 1)) && fullPaperData) {
       // Level 4: List questions
       const subjectName = fullPaperPath[1];
       const chapterName = fullPaperPath[2];
       const topicName = fullPaperPath[3];
-      const questions = (fullPaperData.questions || []).filter(q => 
-         (q.subjectName || 'General') === subjectName && 
-         (q.chapterName || 'General') === chapterName &&
-         (q.topicName || 'General') === topicName
-      );
+      const questions = activeTab === 'BANK_EXAMS'
+        ? (fullPaperData.questions || [])
+        : (fullPaperData.questions || []).filter(q =>
+            (q.subjectName || 'General') === subjectName &&
+            (q.chapterName || 'General') === chapterName &&
+            (q.topicName || 'General') === topicName
+          );
 
       return (
         <div className="space-y-4">
@@ -822,7 +839,7 @@ export default function QuestionBanks() {
                 <div className="flex justify-between items-start">
                   <div className="flex gap-2">
                     <span className="font-bold text-gray-700 w-8">Q{idx + 1}.</span>
-                    <div className="text-gray-900 font-medium overflow-x-auto" dangerouslySetInnerHTML={{ __html: q.questionText }} />
+                    <MathContent html={q.questionText} className="text-gray-900 font-medium overflow-x-auto" />
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs pl-10">
@@ -848,7 +865,7 @@ export default function QuestionBanks() {
                         <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold mr-3 ${opt.isCorrect ? 'bg-success-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
                           {String.fromCharCode(65 + oIdx)}
                         </span>
-                        <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: opt.text }} />
+                        <MathContent html={opt.text} className="overflow-x-auto" />
                       </div>
                     </div>
                   ))}
@@ -857,7 +874,7 @@ export default function QuestionBanks() {
                 {q.explanation && (
                   <div className="ml-10 mt-4 p-3 bg-blue-50 border border-blue-100 rounded-lg">
                     <p className="text-sm font-semibold text-blue-900 mb-1">Explanation:</p>
-                    <div className="text-sm text-blue-800" dangerouslySetInnerHTML={{ __html: q.explanation }} />
+                    <MathContent html={q.explanation} className="text-sm text-blue-800" />
                   </div>
                 )}
               </Card>
@@ -1041,7 +1058,7 @@ export default function QuestionBanks() {
               </Button>
             )}
 
-            {activeTab === 'FULL_PAPERS' && fullPaperPath.length > 0 && (
+            {(activeTab === 'FULL_PAPERS' || activeTab === 'BANK_EXAMS') && fullPaperPath.length > 0 && (
               <Button 
                 icon={Upload} 
                 onClick={() => router.push(`/admin/question-banks/${fullPaperPath[0]._id}/edit?tab=FULL_PAPERS`)}
@@ -1083,7 +1100,7 @@ export default function QuestionBanks() {
                 onClick={() => setFullPaperPath([])}
                 className={`flex items-center ${fullPaperPath.length === 0 ? 'font-bold text-primary-700' : 'text-gray-500 hover:text-primary-600'}`}
               >
-                Full Papers
+                {activeTab === 'BANK_EXAMS' ? 'Bank Exam' : 'Full Papers'}
               </button>
               
               {fullPaperPath.map((crumb, idx) => (

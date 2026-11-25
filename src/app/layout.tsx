@@ -18,6 +18,9 @@ const mulish = Mulish({
 export const metadata: Metadata = {
   title: "Prepzo | Smart prep, learn anytime anywhere",
   description: "Prepzo helps learners prepare with live classes, study material, practice tests and personalised academic support.",
+  verification: {
+    google: "yU5LCWdoOQePc6YveoB50XzWjn3r-_pK_f_gRh0LnJc",
+  },
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },

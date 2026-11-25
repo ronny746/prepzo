@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const CourseModel = require('./courses.model');
 
+const courseSlug = (name = '') => String(name).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'course';
+
 // Public route to get all active courses
 router.get('/', async (req, res, next) => {
   try {
@@ -60,7 +62,11 @@ router.get('/', async (req, res, next) => {
     const courses = await CourseModel.find(query)
       .populate('faculties', 'firstName lastName email phone profilePictureUrl metadata role')
       .sort({ updatedAt: -1, createdAt: -1 });
-    return res.status(200).json({ success: true, data: courses });
+    return res.status(200).json({ success: true, data: courses.map(course => {
+      const item = course.toObject();
+      item.slug = item.slug || courseSlug(item.name);
+      return item;
+    }) });
   } catch (error) {
     next(error);
   }
@@ -70,11 +76,13 @@ router.get('/', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const mongoose = require('mongoose');
-    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(404).json({ success: false, message: 'Course not found' });
-    }
-    const course = await CourseModel.findOne({ 
-      _id: req.params.id, 
+    if (!req.params.id) return res.status(404).json({ success: false, message: 'Course not found' });
+    const identifier = req.params.id.toLowerCase();
+    const identity = mongoose.Types.ObjectId.isValid(identifier)
+      ? { $or: [{ _id: identifier }, { slug: identifier }] }
+      : { slug: identifier };
+    let course = await CourseModel.findOne({
+      ...identity,
       isActive: true, 
       isPublished: { $ne: false },
       $or: [
@@ -83,8 +91,24 @@ router.get('/:id', async (req, res, next) => {
         { endDate: { $gt: new Date() } }
       ]
     }).populate('faculties', 'firstName lastName email phone profilePictureUrl metadata role');
+    // Older courses may not have a persisted slug yet. Resolve their generated
+    // name slug once so existing catalogue entries get the new URL format too.
+    if (!course && !mongoose.Types.ObjectId.isValid(identifier)) {
+      const candidates = await CourseModel.find({
+        isActive: true,
+        isPublished: { $ne: false },
+        $or: [
+          { endDate: { $exists: false } },
+          { endDate: null },
+          { endDate: { $gt: new Date() } }
+        ]
+      }).populate('faculties', 'firstName lastName email phone profilePictureUrl metadata role');
+      course = candidates.find(item => (item.slug || courseSlug(item.name)) === identifier) || null;
+    }
     if (!course) return res.status(404).json({ success: false, message: 'Course not found' });
-    return res.status(200).json({ success: true, data: course });
+    const data = course.toObject();
+    data.slug = data.slug || courseSlug(data.name);
+    return res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
   }

@@ -53,6 +53,12 @@ function duplicateCourseNameError() {
   return error;
 }
 
+function courseSlug(name = '') {
+  return String(name).toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'course';
+}
+
 exports.createCourse = async (reqUser, payload) => {
   let instituteId = reqUser.instituteId;
   // A setup admin may not be attached to an institute yet. For a brand-new
@@ -72,6 +78,7 @@ exports.createCourse = async (reqUser, payload) => {
   includeSubjectTeachersAsFaculty(payload);
   const course = new CourseModel({
     ...payload,
+    slug: payload.slug || courseSlug(payload.name),
     instituteId
   });
   return await course.save();
@@ -146,6 +153,7 @@ exports.updateCourse = async (id, payload, reqUser) => {
   await validateSubjectTeachers(payload, reqUser.instituteId);
   await validateLibrarySubjects(payload, reqUser.instituteId);
   includeSubjectTeachersAsFaculty(payload, existingCourse.faculties || []);
+  if (payload.name && !payload.slug) payload.slug = courseSlug(payload.name);
   return await CourseModel.findOneAndUpdate(
     { _id: id, instituteId: reqUser.instituteId },
     payload,

@@ -29,6 +29,17 @@ const examSchema = new mongoose.Schema({
     enum: ['INTERNAL', 'PUBLIC'],
     default: 'INTERNAL'
   },
+  accessType: {
+    type: String,
+    enum: ['FREE', 'PAID'],
+    default: 'FREE',
+    index: true,
+  },
+  price: {
+    type: Number,
+    min: 0,
+    default: 0,
+  },
   settings: {
     startTime: {
       type: Date,
@@ -85,7 +96,9 @@ const examSchema = new mongoose.Schema({
   totalQuestions: {
     type: Number,
     default: 0,
-  }
+  },
+  sourceSystem: { type: String, trim: true, index: true },
+  sourcePaperId: { type: String, trim: true, index: true },
 }, { timestamps: true });
 
 // Check if exam is active right now
