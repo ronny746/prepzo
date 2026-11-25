@@ -3,6 +3,8 @@ const QuestionBank = require('../exams/question-bank.model');
 const UserModel = require('../users/users.model');
 const InstituteModel = require('../institutes/institutes.model');
 const mongoose = require('mongoose');
+const { COMMITTED_STATUSES, coerceAnswerInput, computeAnswerCounts, gradeStoredAnswer } = require('./practice.helpers');
+const { gradeAnswer, isAttempted } = require('../exams/answer-grading');
 
 // Get available subjects, chapters, and topics for the student's institute
 exports.getFilters = async (req, res) => {
@@ -540,6 +542,55 @@ exports.getRemedialDpps = async (req, res) => {
   }
 };
 
+/**
+ * Returns anonymised timing benchmarks for the exact DPP questions in a
+ * session.  We deliberately aggregate only completed DPPs and only answers
+ * that were actually attempted, so an open tab or a student merely viewing a
+ * question cannot distort the class average.
+ */
+async function getDppQuestionTimingBenchmarks(instituteId, questionIds = []) {
+  const uniqueQuestionIds = [...new Set(questionIds.filter(Boolean).map(String))];
+  if (!uniqueQuestionIds.length || !mongoose.Types.ObjectId.isValid(instituteId)) {
+    return new Map();
+  }
+
+  const rows = await PracticeSession.aggregate([
+    {
+      $match: {
+        institute: new mongoose.Types.ObjectId(instituteId),
+        sessionType: 'DPP',
+        status: 'COMPLETED',
+      },
+    },
+    { $unwind: '$answers' },
+    {
+      $match: {
+        'answers.questionId': { $in: uniqueQuestionIds },
+        'answers.status': { $in: ['ANSWERED', 'ANSWERED_AND_MARKED_FOR_REVIEW'] },
+        'answers.timeSpentSeconds': { $gt: 0 },
+      },
+    },
+    {
+      $group: {
+        _id: { questionId: '$answers.questionId', student: '$student' },
+        studentAverageTimeSeconds: { $avg: '$answers.timeSpentSeconds' },
+      },
+    },
+    {
+      $group: {
+        _id: '$_id.questionId',
+        averageTimeSeconds: { $avg: '$studentAverageTimeSeconds' },
+        attemptedStudentCount: { $sum: 1 },
+      },
+    },
+  ]);
+
+  return new Map(rows.map((row) => [String(row._id), {
+    averageTimeSeconds: Math.round(Number(row.averageTimeSeconds) || 0),
+    attemptCount: Number(row.attemptedStudentCount) || 0,
+  }]));
+}
+
 // Fetch a specific session to play/resume/review
 exports.getSession = async (req, res) => {
   try {
@@ -557,7 +608,23 @@ exports.getSession = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Session not found.' });
     }
     
-    res.status(200).json({ success: true, data: session });
+    const sessionData = session.toObject();
+    const questionIds = (sessionData.questions || []).map((question) => question.questionId);
+    const benchmarks = await getDppQuestionTimingBenchmarks(sessionData.institute, questionIds);
+    const answersByQuestion = new Map((sessionData.answers || []).map((answer) => [String(answer.questionId), answer]));
+
+    sessionData.questions = (sessionData.questions || []).map((question) => {
+      const answer = answersByQuestion.get(String(question.questionId));
+      const benchmark = benchmarks.get(String(question.questionId));
+      return {
+        ...question,
+        studentTimeSeconds: Number(answer?.timeSpentSeconds) || 0,
+        averageTimeSeconds: benchmark?.averageTimeSeconds || 0,
+        attemptedStudentCount: benchmark?.attemptCount || 0,
+      };
+    });
+
+    res.status(200).json({ success: true, data: sessionData });
   } catch (error) {
     console.error("Error fetching session:", error);
     res.status(500).json({ success: false, message: 'Server error fetching session.' });
@@ -567,7 +634,10 @@ exports.getSession = async (req, res) => {
 // Save progress for Pause/Resume or per-question practice
 exports.saveProgress = async (req, res) => {
   try {
-    const { questionId, selectedOptionId, status } = req.body; // status: ANSWERED, MARKED_FOR_REVIEW, etc
+    const { questionId, status } = req.body; // status: ANSWERED, MARKED_FOR_REVIEW, etc
+    // Older app builds send a typed integer in selectedOptionId; coerce routes it to subjectiveAnswerText.
+    const input = coerceAnswerInput(req.body);
+    const hasAnswerField = req.body.selectedOptionId !== undefined || req.body.subjectiveAnswerText !== undefined;
     const session = await PracticeSession.findOne({ _id: req.params.id, student: req.user.userId });
     
     if (!session) {
@@ -580,32 +650,29 @@ exports.saveProgress = async (req, res) => {
     
     // Find if answer exists
     const answerIndex = session.answers.findIndex(a => a.questionId === questionId);
+    const q = session.questions.find(q => q.questionId === questionId);
     
     // Determine correctness for Practice Mode (instant feedback)
-    let isCorrect = false;
-    if (selectedOptionId) {
-      const q = session.questions.find(q => q.questionId === questionId);
-      if (q) {
-        const correctOpt = (q.options || []).find(o => o.isCorrect);
-        if (correctOpt && (
-          (correctOpt._id && correctOpt._id.toString() === selectedOptionId) ||
-          (correctOpt.id && correctOpt.id.toString() === selectedOptionId) ||
-          (correctOpt._id === selectedOptionId)
-        )) {
-          isCorrect = true;
-        }
-      }
-    }
+    const verdict = q ? gradeAnswer(q, input) : { attempted: false, isCorrect: false };
+    const isCorrect = verdict.attempted && verdict.isCorrect;
     
     if (answerIndex > -1) {
-      if (selectedOptionId !== undefined) session.answers[answerIndex].selectedOptionId = selectedOptionId;
+      if (hasAnswerField) {
+        session.answers[answerIndex].selectedOptionId = input.selectedOptionId;
+        session.answers[answerIndex].subjectiveAnswerText = input.subjectiveAnswerText;
+      }
+      if (input.selectedOptionIds !== undefined) session.answers[answerIndex].selectedOptionIds = input.selectedOptionIds;
+      if (input.numericAnswer !== undefined) session.answers[answerIndex].numericAnswer = input.numericAnswer;
       if (status !== undefined) session.answers[answerIndex].status = status;
       if (req.body.timeSpentSeconds !== undefined) session.answers[answerIndex].timeSpentSeconds = req.body.timeSpentSeconds;
       session.answers[answerIndex].isCorrect = isCorrect;
     } else {
       session.answers.push({
         questionId,
-        selectedOptionId,
+        selectedOptionId: input.selectedOptionId,
+        selectedOptionIds: input.selectedOptionIds || [],
+        numericAnswer: input.numericAnswer,
+        subjectiveAnswerText: input.subjectiveAnswerText,
         status: status || 'ANSWERED',
         isCorrect,
         timeSpentSeconds: req.body.timeSpentSeconds || 0
@@ -615,8 +682,7 @@ exports.saveProgress = async (req, res) => {
     await session.save();
     
     // For Practice mode, return the correctness and explanation instantly
-    if (session.sessionType === 'PRACTICE' && selectedOptionId) {
-       const q = session.questions.find(q => q.questionId === questionId);
+    if (session.sessionType === 'PRACTICE' && verdict.attempted) {
        return res.status(200).json({ 
          success: true, 
          data: { isCorrect, explanation: q ? q.explanation : '' } 
@@ -643,30 +709,42 @@ exports.submitSession = async (req, res) => {
       return res.status(200).json({ success: true, data: session }); // already submitted
     }
     
-    const { timeSpentPerQuestion, totalTimeSpentSeconds } = req.body || {};
+    const { timeSpentPerQuestion, totalTimeSpentSeconds, answers: submittedAnswers } = req.body || {};
     let score = 0;
+
+    // The app may send its final answers with the submit call; merge them over
+    // whatever was saved via /progress so nothing typed last is lost.
+    if (Array.isArray(submittedAnswers)) {
+      submittedAnswers.forEach((sub) => {
+        if (!sub || !sub.questionId) return;
+        const input = coerceAnswerInput(sub);
+        const existing = session.answers.find(a => a.questionId === sub.questionId);
+        if (existing) {
+          existing.selectedOptionId = input.selectedOptionId;
+          existing.subjectiveAnswerText = input.subjectiveAnswerText;
+          if (input.selectedOptionIds !== undefined) existing.selectedOptionIds = input.selectedOptionIds;
+          if (input.numericAnswer !== undefined) existing.numericAnswer = input.numericAnswer;
+          if (sub.status !== undefined) existing.status = sub.status;
+          if (sub.timeSpentSeconds !== undefined) existing.timeSpentSeconds = sub.timeSpentSeconds;
+        } else {
+          session.answers.push({
+            questionId: sub.questionId,
+            selectedOptionId: input.selectedOptionId,
+            subjectiveAnswerText: input.subjectiveAnswerText,
+            selectedOptionIds: input.selectedOptionIds || [],
+            numericAnswer: input.numericAnswer,
+            status: sub.status || (isAttempted(input) ? 'ANSWERED' : 'NOT_ANSWERED'),
+            timeSpentSeconds: sub.timeSpentSeconds || 0,
+          });
+        }
+      });
+    }
     
     // Evaluate all answers
     session.answers.forEach(ans => {
-       if ((ans.selectedOptionId && ans.status === 'ANSWERED') || ans.status === 'ANSWERED_AND_MARKED_FOR_REVIEW') {
-          const q = session.questions.find(q => q.questionId === ans.questionId);
-          if (q) {
-            const correctOpt = (q.options || []).find(o => o.isCorrect);
-            const isCorrectSelected = correctOpt && (
-              (correctOpt._id && correctOpt._id.toString() === ans.selectedOptionId) ||
-              (correctOpt.id && correctOpt.id.toString() === ans.selectedOptionId) ||
-              (correctOpt._id === ans.selectedOptionId)
-            );
-            
-            if (isCorrectSelected) {
-              ans.isCorrect = true;
-              score += (q.marks || 4);
-            } else {
-              ans.isCorrect = false;
-              score -= (q.negativeMarks || 1);
-            }
-          }
-       }
+      if (!COMMITTED_STATUSES.includes(ans.status)) return;
+      const q = session.questions.find(q => q.questionId === ans.questionId);
+      score += gradeStoredAnswer(ans, q);
     });
 
     // Merge timeSpentPerQuestion if provided (an object map: { questionId: seconds })
@@ -739,11 +817,17 @@ exports.getHistory = async (req, res) => {
 
     if (sessionType) query.sessionType = sessionType;
     
-    const sessions = await PracticeSession.find(query)
-      .select('-questions -answers') // Exclude bulky arrays for list view
+    // Answers/questions are needed only to derive counts; they are stripped from the payload below.
+    const docs = await PracticeSession.find(query)
       .populate('student', 'firstName lastName email metadata')
       .populate('assignedBy', 'firstName lastName email role')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const sessions = docs.map(({ questions, answers, ...rest }) => ({
+      ...rest,
+      ...computeAnswerCounts({ questions, answers, totalQuestions: rest.totalQuestions }),
+    }));
       
     res.status(200).json({ success: true, data: sessions });
   } catch (error) {

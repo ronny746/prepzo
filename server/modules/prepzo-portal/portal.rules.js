@@ -49,9 +49,14 @@ function dobPasswordCandidates(value) {
   ])];
 }
 
-function makeWelcomeMessage({ courseName, batchName, amountPaid, amountDue, timetableUrl }) {
+/**
+ * Build the enrolment welcome text. It never embeds a route: raw paths such as
+ * "/student/timetable" are meaningless in the app, so callers carry the link in
+ * the notification's metadata instead.
+ */
+function makeWelcomeMessage({ courseName, batchName, amountPaid, amountDue }) {
   const remaining = Math.max(0, Number(amountDue || 0) - Number(amountPaid || 0));
-  const timetable = timetableUrl ? ` Your first-week timetable: ${timetableUrl}` : ' Your first-week timetable will appear in the app.';
+  const timetable = ' Your first-week timetable is in the Timetable section of the app.';
   return `Welcome to ${courseName}. You are enrolled in ${batchName}. Fee paid: ₹${Number(amountPaid || 0)}. Fee remaining: ₹${remaining}.${timetable}`;
 }
 

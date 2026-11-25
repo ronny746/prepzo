@@ -44,9 +44,12 @@ router.get(
   FeesPaymentsController.getChildFees
 );
 
+// Records an offline/manual payment (cash, cheque, bank transfer). Staff only:
+// students and parents must pay through the gateway (/payments/*), because this
+// endpoint trusts the amount and transaction id sent by the caller.
 router.post(
   '/pay',
-  rbacMiddleware.requireRole([ROLES.SUPER_ADMIN, ROLES.ADMIN_OPERATIONS, ROLES.STUDENT, ROLES.PARENT]),
+  rbacMiddleware.requireRole([ROLES.SUPER_ADMIN, ROLES.ADMIN_OPERATIONS]),
   validate(processPaymentSchema),
   FeesPaymentsController.processPayment
 );

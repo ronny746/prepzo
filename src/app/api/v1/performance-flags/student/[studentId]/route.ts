@@ -19,11 +19,6 @@ export async function GET(
       try {
         user = jwt.verify(token, process.env.JWT_SECRET || '');
       } catch (e) {}
-      if (!user) {
-        try {
-          user = jwt.decode(token);
-        } catch (e) {}
-      }
     }
 
     if (!user) {

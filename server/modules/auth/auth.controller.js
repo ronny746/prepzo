@@ -4,6 +4,11 @@ const { sendMobileOTP } = require('../../services/sms.service');
 const OtpModel = require('../../models/otp.model');
 const User = require('../users/users.model');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const env = require('../../config/env');
+
+/** Cryptographically random 6-digit OTP. */
+const generateOtp = () => crypto.randomInt(100000, 1000000).toString();
 
 exports.login = async (req, res, next) => {
   try {
@@ -64,13 +69,13 @@ exports.requestOtp = async (req, res, next) => {
         }
 
         const result = await sendMobileOTP(cleanPhone);
-        const otp = result.otp || Math.floor(100000 + Math.random() * 900000).toString();
+        // Why: previously a fallback OTP was saved and "sent" reported even when the
+        // SMS never went out, leaving users waiting for a code that never arrives.
+        if (!result.success || !result.otp) {
+            return errorResponse(res, "Could not send OTP right now. Please try again.", null, 502);
+        }
 
-        // Save generated OTP to database
-        await OtpModel.create({ phone: cleanPhone, otp });
-
-        // Always log OTP to server terminal for instant development / testing
-        console.log('\n\n=========================================\n🔥 MOBILE OTP FOR %s IS: %s 🔥\n=========================================\n\n', cleanPhone, otp);
+        await OtpModel.create({ phone: cleanPhone, otp: result.otp });
 
         return successResponse(res, "OTP sent successfully to mobile number", { phone: cleanPhone });
     } catch (err) {
@@ -165,7 +170,7 @@ exports.verifyOtp = async (req, res, next) => {
         // Generate JWT Token
         const token = jwt.sign(
             { userId: user._id, role: user.role, instituteId: user.instituteId, sessionId }, 
-            process.env.JWT_SECRET || 'your_jwt_secret', 
+            env.JWT_SECRET, 
             { expiresIn: '30d' }
         );
 
@@ -207,6 +212,30 @@ exports.verifyOtp = async (req, res, next) => {
     }
 };
 
+// Sliding session: a client with a still-valid token gets a fresh one, so a
+// student who opens the app at least once a month is never signed out. The
+// auth middleware has already checked the token, the account and the
+// single-device sessionId before this runs.
+exports.refreshToken = async (req, res, next) => {
+    try {
+        const { iat, exp, nbf, ...claims } = req.user;
+        if (claims.isDeveloper) {
+            return errorResponse(res, 'This token cannot be refreshed.', null, 403);
+        }
+        const payload = {
+            ...claims,
+            role: req.user.role,
+            instituteId: req.user.instituteId,
+            branchId: req.user.branchId,
+        };
+        const env = require('../../config/env');
+        const token = jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
+        return successResponse(res, 'Session refreshed', { token });
+    } catch (err) {
+        next(err);
+    }
+};
+
 exports.verifyDevice = async (req, res, next) => {
     try {
         const { sessionId } = req.body;
@@ -239,21 +268,26 @@ exports.requestEmailOtp = async (req, res, next) => {
             return errorResponse(res, `No ${role || 'user'} found with this email`, null, 404);
         }
 
-        const otp = process.env.STATIC_OTP || '123456';
-        
-        // Save OTP to database first so user can login via terminal even if email fails
-        await OtpModel.create({ email: email.toLowerCase(), otp });
- 
-                // Always log the OTP to server console to aid testing (regardless of email delivery)
-                console.log('\n\n=========================================\n🔥 EMAIL OTP FOR %s IS: %s 🔥\n=========================================\n\n', email.toLowerCase(), otp);
-        const result = await sendEmailOTP(email, otp);
+        // Why: the OTP used to be a fixed '123456' for every account (admins included).
+        // A static OTP is honoured only when STATIC_OTP is set AND NODE_ENV is
+        // explicitly a non-production value (unset NODE_ENV fails closed), for
+        // testing without SMTP.
+        const useStaticOtp = ['development', 'test', 'staging'].includes(process.env.NODE_ENV) &&
+            Boolean(process.env.STATIC_OTP);
+        const otp = useStaticOtp ? String(process.env.STATIC_OTP) : generateOtp();
 
-        if (result.success) {
+        await OtpModel.create({ email: email.toLowerCase(), otp });
+
+        if (useStaticOtp) {
             return successResponse(res, "OTP sent successfully to email");
-        } else {
-            // Send 200 OK anyway for testing, but include a warning message
-            return successResponse(res, "OTP generated (Check terminal). Email failed to send due to App Password issue.");
         }
+
+        const result = await sendEmailOTP(email, otp);
+        if (!result.success) {
+            await OtpModel.deleteMany({ email: email.toLowerCase(), otp });
+            return errorResponse(res, "Could not send OTP email right now. Please try again.", null, 502);
+        }
+        return successResponse(res, "OTP sent successfully to email");
     } catch (err) {
         next(err);
     }
@@ -274,16 +308,12 @@ exports.verifyEmailOtp = async (req, res, next) => {
             return errorResponse(res, "Invalid user credentials", null, 401);
         }
 
-        const isMasterOtp = String(otp).trim() === '123456';
-        let validOtp = null;
-        if (!isMasterOtp) {
-            validOtp = await OtpModel.findOne({ email: email.toLowerCase(), otp });
-            if (!validOtp) {
-                return errorResponse(res, "Invalid or expired OTP", null, 401);
-            }
-            // Delete OTP after successful verification
-            await OtpModel.deleteOne({ _id: validOtp._id });
+        // No master OTP: every login must match an OTP issued for this email.
+        const validOtp = await OtpModel.findOne({ email: email.toLowerCase(), otp: String(otp).trim() });
+        if (!validOtp) {
+            return errorResponse(res, "Invalid or expired OTP", null, 401);
         }
+        await OtpModel.deleteOne({ _id: validOtp._id });
 
         // Generate JWT
         const sessionId = Math.random().toString(36).substring(2, 15);
@@ -301,7 +331,7 @@ exports.verifyEmailOtp = async (req, res, next) => {
                 branchId: user.branchId,
                 sessionId 
             },
-            process.env.JWT_SECRET,
+            env.JWT_SECRET,
             { expiresIn: '30d' }
         );
 
@@ -324,21 +354,28 @@ exports.verifyEmailOtp = async (req, res, next) => {
 exports.developerMode = async (req, res, next) => {
     try {
         const { pin } = req.body;
-        // Verify PIN
-        if (pin !== '9999') {
+        // Why: PIN and developer email were hardcoded in source. They now come from
+        // env; if either is unset, developer mode is disabled entirely.
+        const devPin = process.env.DEVELOPER_PIN;
+        const devEmail = (process.env.DEVELOPER_EMAIL || '').toLowerCase();
+        if (!devPin || !devEmail) {
+            return errorResponse(res, "Developer Mode is disabled.", null, 403);
+        }
+        const pinBuf = Buffer.from(String(pin || ''));
+        const devPinBuf = Buffer.from(devPin);
+        if (pinBuf.length !== devPinBuf.length || !crypto.timingSafeEqual(pinBuf, devPinBuf)) {
             return errorResponse(res, "Invalid Developer PIN", null, 401);
         }
-        
-        // Ensure user is the developer
+
         const user = await User.findById(req.user.userId);
-        if (!user || user.email !== 'developer.abhishek.0929@gmail.com') {
+        if (!user || String(user.email || '').toLowerCase() !== devEmail) {
             return errorResponse(res, "Access Denied. You are not authorized for Developer Mode.", null, 403);
         }
 
         // Generate Developer Token
         const developerToken = jwt.sign(
             { userId: user._id, isDeveloper: true },
-            process.env.JWT_SECRET || 'your_jwt_secret',
+            env.JWT_SECRET,
             { expiresIn: '1h' }
         );
 

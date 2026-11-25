@@ -8,6 +8,26 @@ const Notification = require('../notifications/notifications.model');
 const NotificationsService = require('../notifications/notifications.service');
 const { normalizeDob, makeWelcomeMessage } = require('../prepzo-portal/portal.rules');
 
+/**
+ * Block paying for a course that is not on sale, or that the student already
+ * owns. A pending custom installment is still payable (it is not a repeat buy).
+ */
+async function assertCoursePurchasable(course, studentId, hasPendingInstallment) {
+  if (course.isActive === false || course.isPublished === false) {
+    throw new Error('This course is not open for enrollment.');
+  }
+  if (hasPendingInstallment) return;
+
+  const paidRecord = await FeeRecord.exists({ studentId, courseId: course._id, status: 'PAID' });
+  if (paidRecord) throw new Error('You are already enrolled in this course.');
+
+  const inCourseBatch = await BatchModel.exists({ courseId: course._id, students: studentId });
+  if (inCourseBatch) {
+    const openRecord = await FeeRecord.exists({ studentId, courseId: course._id, status: { $ne: 'PAID' } });
+    if (!openRecord) throw new Error('You are already enrolled in this course.');
+  }
+}
+
 class PaymentsService {
   /**
    * Initiate Easebuzz payment for a course enrollment
@@ -72,6 +92,8 @@ class PaymentsService {
     if (amount <= 0) {
       throw new Error('Course fee must be greater than 0 for online payment gateway.');
     }
+
+    await assertCoursePurchasable(course, user._id, Boolean(targetInstallment));
 
     // Generate clean alphanumeric transaction ID
     const txnid = `EB${Date.now()}${Math.floor(1000 + Math.random() * 9000)}`;
@@ -185,6 +207,8 @@ class PaymentsService {
       throw new Error('Course fee must be greater than 0 for online payment gateway.');
     }
 
+    await assertCoursePurchasable(course, user._id, Boolean(targetInstallment));
+
     const receipt = `RZP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
 
     const order = await razorpayService.createOrder({
@@ -215,7 +239,9 @@ class PaymentsService {
 
     return {
       success: true,
-      keyId: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || 'rzp_test_TZAWZi6xItEYWa',
+      // The checkout receives the key that created this order.  It is safe to
+      // expose Razorpay's key id, but never expose the key secret.
+      keyId: razorpayService.keyId,
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
@@ -268,31 +294,40 @@ class PaymentsService {
       throw new Error('Invalid payment signature. Verification failed.');
     }
 
-    const targetCourseId = courseId || paymentTxn?.courseId;
-    const targetStudentId = studentId || paymentTxn?.studentId;
-    const targetInstituteId = paymentTxn?.instituteId;
-
-    if (paymentTxn) {
-      paymentTxn.status = 'SUCCESS';
-      paymentTxn.gatewayStatus = 'captured';
-      paymentTxn.easepayid = razorpay_payment_id;
-      await paymentTxn.save();
-    } else {
-      paymentTxn = new PaymentTransaction({
-        instituteId: targetInstituteId || null,
-        studentId: targetStudentId || null,
-        courseId: targetCourseId || null,
-        amountPaid: 0,
-        paymentMethod: 'RAZORPAY',
-        transactionId: razorpay_order_id,
-        easepayid: razorpay_payment_id,
-        status: 'SUCCESS',
-        gatewayStatus: 'captured'
-      });
-      await paymentTxn.save();
+    // Only orders this server created can be fulfilled, and always for the
+    // course/student stored on that order (never ids from the request body).
+    if (!paymentTxn || paymentTxn.paymentMethod !== 'RAZORPAY') {
+      throw new Error('Payment order not found.');
+    }
+    const targetCourseId = paymentTxn.courseId;
+    const targetStudentId = paymentTxn.studentId;
+    const targetInstituteId = paymentTxn.instituteId;
+    if ((courseId && String(courseId) !== String(targetCourseId)) || (studentId && String(studentId) !== String(targetStudentId))) {
+      throw new Error('Payment does not match this course.');
     }
 
-    if (targetCourseId && targetStudentId) {
+    // Verifying the same order again must not enroll / credit twice.
+    if (paymentTxn.status === 'SUCCESS') {
+      return {
+        success: true,
+        status: 'success',
+        transactionId: razorpay_order_id,
+        paymentId: paymentTxn.easepayid || razorpay_payment_id,
+        courseId: targetCourseId,
+        alreadyVerified: true
+      };
+    }
+
+    // Atomic PENDING -> SUCCESS so a replayed verify call cannot credit the fee
+    // record (or mark installments paid) a second time.
+    const claimed = await PaymentTransaction.findOneAndUpdate(
+      { _id: paymentTxn._id, status: { $ne: 'SUCCESS' } },
+      { $set: { status: 'SUCCESS', gatewayStatus: 'captured', easepayid: razorpay_payment_id } },
+      { new: true }
+    );
+    if (claimed) paymentTxn = claimed;
+
+    if (claimed && targetCourseId && targetStudentId) {
       await this.fulfillCourseEnrollment(targetCourseId, targetStudentId, targetInstituteId, null, paymentTxn);
     }
 
@@ -328,12 +363,41 @@ class PaymentsService {
       udf5: paymentType
     } = body;
 
-    // 1. Look up existing transaction record first to retrieve student email/phone if missing
-    let paymentTxn = await PaymentTransaction.findOne({ transactionId: txnid }).populate('studentId');
+    // String() so a query-string object like txnid[$ne]=x can't match another row.
+    let paymentTxn = txnid
+      ? await PaymentTransaction.findOne({ transactionId: String(txnid) }).populate('studentId')
+      : null;
+
+    // Why: callbacks for orders we never created used to build a transaction from
+    // the (attacker-controllable) body. Only orders created by initiate are honoured.
+    if (!paymentTxn) {
+      return {
+        success: false,
+        status: 'failed',
+        txnid,
+        message: 'Unknown payment order'
+      };
+    }
+
+    // Replay of an already-fulfilled callback: report success, change nothing.
+    if (paymentTxn.status === 'SUCCESS') {
+      return {
+        success: true,
+        status: 'success',
+        txnid,
+        easepayid: paymentTxn.easepayid,
+        courseId: paymentTxn.courseId,
+        studentId: paymentTxn.studentId?._id || paymentTxn.studentId,
+        amount: paymentTxn.amountPaid,
+        message: 'Payment completed and enrollment verified successfully.'
+      };
+    }
     
-    const userEmail = email || paymentTxn?.studentId?.email || '';
-    const userPhone = phone || paymentTxn?.studentId?.phone || '';
-    const txnAmount = amount || paymentTxn?.amountPaid || 0;
+    // Stored values first: the retrieve call below must check the amount we
+    // charged, not whatever amount the callback body claims.
+    const userEmail = paymentTxn?.studentId?.email || email || '';
+    const userPhone = paymentTxn?.studentId?.phone || phone || '';
+    const txnAmount = paymentTxn?.amountPaid || amount || 0;
 
     const normalizedStatus = (status || '').toLowerCase().trim();
     const isStatusSuccess = ['success', 'successful', 'userpaid', 'user_paid'].includes(normalizedStatus);
@@ -349,7 +413,9 @@ class PaymentsService {
         if (apiRes && apiRes.status === 1 && apiRes.data) {
           const rawData = Array.isArray(apiRes.data) ? apiRes.data[0] : apiRes.data;
           const apiStatus = (rawData?.status || '').toLowerCase().trim();
-          if (['success', 'successful', 'userpaid', 'user_paid'].includes(apiStatus)) {
+          const apiAmountMatches = rawData?.amount === undefined ||
+            Math.abs(Number(rawData.amount) - Number(paymentTxn.amountPaid)) < 0.01;
+          if (['success', 'successful', 'userpaid', 'user_paid'].includes(apiStatus) && apiAmountMatches) {
             isPaymentSuccess = true;
             if (rawData.easepayid) body.easepayid = rawData.easepayid;
             if (rawData.bank_ref_num) body.bank_ref_num = rawData.bank_ref_num;
@@ -360,21 +426,6 @@ class PaymentsService {
       }
     }
 
-    if (isStatusSuccess && process.env.NODE_ENV !== 'production') {
-      isPaymentSuccess = true;
-    }
-
-    if (!paymentTxn && txnid) {
-      paymentTxn = new PaymentTransaction({
-        instituteId: instituteId || null,
-        studentId: studentId || null,
-        courseId: courseId || null,
-        amountPaid: Number(txnAmount) || 0,
-        paymentMethod: 'EASEBUZZ',
-        transactionId: txnid
-      });
-    }
-
     if (paymentTxn) {
       paymentTxn.easepayid = easepayid || body.easepayid || paymentTxn.easepayid;
       paymentTxn.bankRefNum = bank_ref_num || body.bank_ref_num || paymentTxn.bankRefNum;
@@ -383,17 +434,27 @@ class PaymentsService {
     }
 
     if (isPaymentSuccess) {
-      if (paymentTxn) {
-        paymentTxn.status = 'SUCCESS';
-        await paymentTxn.save();
-      }
+      // Atomic claim: concurrent/replayed callbacks fulfil at most once.
+      const claimed = await PaymentTransaction.findOneAndUpdate(
+        { _id: paymentTxn._id, status: { $ne: 'SUCCESS' } },
+        { $set: {
+          status: 'SUCCESS',
+          easepayid: paymentTxn.easepayid,
+          bankRefNum: paymentTxn.bankRefNum,
+          gatewayStatus: paymentTxn.gatewayStatus,
+          rawResponse: paymentTxn.rawResponse
+        } },
+        { new: true }
+      );
 
-      const targetCourseId = courseId || paymentTxn?.courseId;
-      const targetStudentId = studentId || paymentTxn?.studentId?._id || paymentTxn?.studentId;
-      const targetInstituteId = instituteId || paymentTxn?.instituteId;
+      // Prefer what we stored at initiate time: udf fields in the callback body are
+      // only covered by the hash on the hash path, not on the API-retrieve fallback.
+      const targetCourseId = paymentTxn?.courseId || courseId;
+      const targetStudentId = paymentTxn?.studentId?._id || paymentTxn?.studentId || studentId;
+      const targetInstituteId = paymentTxn?.instituteId || instituteId;
 
-      if (targetCourseId && targetStudentId) {
-        await this.fulfillCourseEnrollment(targetCourseId, targetStudentId, targetInstituteId, defaultBatchId, paymentTxn);
+      if (claimed && targetCourseId && targetStudentId) {
+        await this.fulfillCourseEnrollment(targetCourseId, targetStudentId, targetInstituteId, defaultBatchId, claimed);
       }
 
       return {
@@ -563,8 +624,7 @@ class PaymentsService {
         courseName: course.name,
         batchName: batch?.name || 'your assigned batch',
         amountPaid: feeRecord?.amountPaid || course.fee,
-        amountDue: feeRecord?.amountDue || course.fee,
-        timetableUrl: '/student/timetable'
+        amountDue: feeRecord?.amountDue || course.fee
       });
       const recipientIds = [user._id, ...(parent ? [parent._id] : [])];
       const existing = await Notification.find({
@@ -580,7 +640,9 @@ class PaymentsService {
         title: 'Course enrollment confirmed',
         message: welcomeMessage,
         type: 'SUCCESS',
-        metadata: { entityType: 'course_enrollment', courseId: String(course._id), batchId: String(assignedBatchId || '') }
+        // The timetable path goes in metadata (for a tappable link), not in the
+        // message text, where the app showed it as a raw "/student/timetable".
+        metadata: { entityType: 'course_enrollment', courseId: String(course._id), batchId: String(assignedBatchId || ''), link: '/student/timetable' }
       });
     } catch (err) {
       console.error('[PaymentsService] Error fulfilling enrollment:', err);
@@ -611,7 +673,9 @@ class PaymentsService {
           const rawData = Array.isArray(apiRes.data) ? apiRes.data[0] : apiRes.data;
           const apiStatus = (rawData?.status || '').toLowerCase().trim();
 
-          if (['success', 'successful', 'userpaid', 'user_paid'].includes(apiStatus)) {
+          const apiAmountMatches = rawData?.amount === undefined ||
+            Math.abs(Number(rawData.amount) - Number(paymentTxn.amountPaid)) < 0.01;
+          if (['success', 'successful', 'userpaid', 'user_paid'].includes(apiStatus) && apiAmountMatches) {
             txn.status = 'SUCCESS';
             txn.gatewayStatus = rawData.status;
             if (rawData.easepayid) txn.easepayid = rawData.easepayid;
@@ -637,3 +701,4 @@ class PaymentsService {
 }
 
 module.exports = new PaymentsService();
+module.exports.assertCoursePurchasable = assertCoursePurchasable;

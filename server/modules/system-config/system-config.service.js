@@ -33,6 +33,12 @@ exports.updateConfig = async (reqUser, payload) => {
         ...payload.appUpdate
       };
     }
+    if (payload.supportContact) {
+      config.supportContact = {
+        ...config.supportContact?.toObject?.() || config.supportContact,
+        ...payload.supportContact
+      };
+    }
     await config.save();
     return config;
   }

@@ -30,9 +30,9 @@ test('DOB login candidates accept display and stored date formats', () => {
   ]);
 });
 
-test('welcome message includes paid, due and timetable information', () => {
+test('welcome message includes paid, due and timetable information without a raw path', () => {
   assert.equal(
-    makeWelcomeMessage({ courseName: 'NEET 2027', batchName: 'Alpha', amountPaid: 5000, amountDue: 12000, timetableUrl: '/timetable' }),
-    'Welcome to NEET 2027. You are enrolled in Alpha. Fee paid: ₹5000. Fee remaining: ₹7000. Your first-week timetable: /timetable'
+    makeWelcomeMessage({ courseName: 'NEET 2027', batchName: 'Alpha', amountPaid: 5000, amountDue: 12000 }),
+    'Welcome to NEET 2027. You are enrolled in Alpha. Fee paid: ₹5000. Fee remaining: ₹7000. Your first-week timetable is in the Timetable section of the app.'
   );
 });

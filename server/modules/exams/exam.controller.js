@@ -4,6 +4,22 @@ const ExamService = require('./exam.service');
 const { getTopicFlag } = require('../prepzo-portal/portal.rules');
 const FlagService = require('../performance-flags/performance-flags.service');
 const { createRemedialSessions } = require('../prepzo-portal/remedial.service');
+const { gradeAnswer, findStudentAnswer } = require('./answer-grading');
+
+// questionImageUrl (set by the Prepzo paper import) was never shown by the app
+// or the web player, so graph/diagram questions had no picture. Put it into
+// the question HTML as well; clients that already show the field skip an
+// image whose URL is in the text.
+const inlineQuestionImages = (qObj) => {
+  if (!qObj) return qObj;
+  const url = typeof qObj.questionImageUrl === 'string' ? qObj.questionImageUrl.trim() : '';
+  const text = typeof qObj.questionText === 'string' ? qObj.questionText : '';
+  if (url && !text.includes(url)) {
+    qObj.questionText = `${text}<p><img src="${url.replace(/"/g, '&quot;')}" alt="Question figure" /></p>`;
+  }
+  return qObj;
+};
+exports.inlineQuestionImages = inlineQuestionImages;
 
 const calculateAnalysisData = (submission, questions, averageTimeByQuestion = new Map()) => {
   let totalMarks = 0;
@@ -20,10 +36,11 @@ const calculateAnalysisData = (submission, questions, averageTimeByQuestion = ne
 
   const detailedQuestions = questions.map(q => {
     const qObj = q.toObject();
-    const userAns = submission.answers && submission.answers.find(a => a?.questionId && q?._id && a.questionId?.toString() === q._id?.toString());
-    
+    const userAns = findStudentAnswer(submission.answers, q?._id);
+    inlineQuestionImages(qObj);
+
     // Initialize Subject stats
-    const subject = q.subject?.name || 'General';
+    const subject = q.subject?.name || q.subjectName || 'General';
     if (!subjectStats[subject]) {
       subjectStats[subject] = {
         totalQuestions: 0,
@@ -38,7 +55,7 @@ const calculateAnalysisData = (submission, questions, averageTimeByQuestion = ne
     subjectStats[subject].totalMarks += q.marks || 0;
 
     // Initialize Topic stats
-    const topic = q.topic?.name || 'General';
+    const topic = q.topic?.name || q.topicName || 'General';
     if (!topicStats[topic]) {
       topicStats[topic] = {
         totalQuestions: 0,
@@ -86,19 +103,18 @@ const calculateAnalysisData = (submission, questions, averageTimeByQuestion = ne
     qObj.studentTimeSeconds = Number(userAns?.timeSpentSeconds || 0);
     qObj.averageTimeSeconds = Number(averageTimeByQuestion.get(String(q._id)) || 0);
     qObj.timingCategory = 'UNRECORDED';
-    let isCorrect = false;
+    // Shared with submitExam (answer-grading.js). A question only marked for
+    // review, with no value, is not attempted.
+    // gradable is false for a typed question with no answer key: it is not
+    // counted wrong, so the student is not penalised for a missing key.
+    const { attempted, isCorrect, gradable } = gradeAnswer(q, userAns);
     let marksObtained = 0;
 
-    if (userAns && userAns.selectedOptionId) {
+    if (attempted) {
       subjectStats[subject].attempted++;
       topicStats[topic].attempted++;
       difficultyStats[diff].attempted++;
       nestedStats[subject][topic][diff].attempted++;
-      
-      const correctOpt = q.options.find(o => o.isCorrect);
-      if (correctOpt && correctOpt._id?.toString() === userAns.selectedOptionId?.toString()) {
-        isCorrect = true;
-      }
 
       if (isCorrect) {
         subjectStats[subject].correct++;
@@ -115,7 +131,7 @@ const calculateAnalysisData = (submission, questions, averageTimeByQuestion = ne
 
         score += qMarks;
         marksObtained = qMarks;
-      } else {
+      } else if (gradable) {
         subjectStats[subject].wrong++;
         subjectStats[subject].score -= qNegativeMarks;
 
@@ -134,7 +150,6 @@ const calculateAnalysisData = (submission, questions, averageTimeByQuestion = ne
     }
 
     const recordedSeconds = qObj.studentTimeSeconds;
-    const attempted = Boolean(userAns && userAns.selectedOptionId);
     if (recordedSeconds > 0) {
       timingStats.recorded++;
       timingStats.totalSeconds += recordedSeconds;
@@ -149,7 +164,8 @@ const calculateAnalysisData = (submission, questions, averageTimeByQuestion = ne
         timingStats.normal++;
       }
     }
-
+    
+    qObj.attempted = attempted;
     qObj.isCorrect = isCorrect;
     qObj.marksObtained = marksObtained;
     return qObj;
@@ -196,6 +212,26 @@ const calculateAnalysisData = (submission, questions, averageTimeByQuestion = ne
   };
 };
 
+// Seconds the attempt took. totalTimeTaken was never stored, so the
+// analysis always reported 0; derive it from the attempt start/end.
+const getAttemptSeconds = (submission) => {
+  if (Number(submission?.totalTimeTaken) > 0) return Number(submission.totalTimeTaken);
+  const start = submission?.startTime ? new Date(submission.startTime).getTime() : NaN;
+  const end = submission?.endTime ? new Date(submission.endTime).getTime() : NaN;
+  return Number.isFinite(start) && Number.isFinite(end) && end > start ? Math.round((end - start) / 1000) : 0;
+};
+exports.getAttemptSeconds = getAttemptSeconds;
+
+// Results (correct answers + solutions) stay hidden until the exam window
+// ends when the exam is set not to show results right after submit, so a
+// student who finished cannot pass answers to those still writing.
+const resultsLockedUntil = (exam) => {
+  if (!exam || exam.settings?.showResultsAfterSubmit !== false) return null;
+  const end = exam.settings?.endTime ? new Date(exam.settings.endTime) : null;
+  return end && end.getTime() > Date.now() ? end : null;
+};
+exports.resultsLockedUntil = resultsLockedUntil;
+
 const getQuestionAverageTimes = async (examId) => {
   const ExamSubmission = require('./exam-submission.model');
   const rows = await ExamSubmission.aggregate([
@@ -209,17 +245,17 @@ const getQuestionAverageTimes = async (examId) => {
 
 exports.createExam = async (req, res) => {
   try {
-    const { title, description, examType, accessType, price, assignedBatches, settings, security } = req.body;
+    const { title, description, examType, assignedBatches, settings, security, accessMode, accessPrice } = req.body;
     
     const exam = new Exam({
       title,
       description,
       examType,
-      accessType: accessType || 'FREE',
-      price: accessType === 'PAID' ? Number(price) || 0 : 0,
       assignedBatches,
       settings,
       security,
+      accessMode: accessMode === 'FREE' ? 'FREE' : 'PAID',
+      accessPrice: Number(accessPrice) || 0,
       status: 'PUBLISHED',
       institute: req.user.instituteId,
       createdBy: req.user.userId,
@@ -239,10 +275,10 @@ exports.createExam = async (req, res) => {
 
 exports.updateExam = async (req, res) => {
   try {
-    const { title, description, examType, accessType, price, assignedBatches, settings, security, status } = req.body;
+    const { title, description, examType, assignedBatches, settings, security, status, accessMode, accessPrice } = req.body;
     const exam = await Exam.findOneAndUpdate(
       { _id: req.params.id, institute: req.user.instituteId },
-      { title, description, examType, accessType: accessType || 'FREE', price: accessType === 'PAID' ? Number(price) || 0 : 0, assignedBatches, settings, security, status },
+      { title, description, examType, assignedBatches, settings, security, status, accessMode: accessMode === 'FREE' ? 'FREE' : 'PAID', accessPrice: Number(accessPrice) || 0 },
       { new: true }
     );
     if (!exam) return res.status(404).json({ success: false, message: 'Exam not found' });
@@ -273,7 +309,7 @@ exports.getExams = async (req, res) => {
 
 exports.getExamDetails = async (req, res) => {
   try {
-    const exam = await Exam.findById(req.params.id)
+    const exam = await Exam.findOne({ _id: req.params.id, institute: req.user.instituteId })
       .populate('assignedBatches', 'name section');
       
     if (!exam) return res.status(404).json({ success: false, message: 'Exam not found' });
@@ -603,6 +639,11 @@ exports.getParentExamAnalysis = async (req, res) => {
       return res.status(404).json({ success: false, message: 'No completed submission found for this exam' });
     }
 
+    const lockedUntil = resultsLockedUntil(await Exam.findById(examId).select('settings'));
+    if (lockedUntil) {
+      return res.status(403).json({ success: false, message: `Results will be available after ${lockedUntil.toISOString()}`, resultsAvailableAt: lockedUntil });
+    }
+
     // Fetch all questions with correct answers
     const questions = await ExamQuestion.find({ exam: examId })
       .populate('subject', 'name')
@@ -620,7 +661,7 @@ exports.getParentExamAnalysis = async (req, res) => {
         difficultyStats: analysis.difficultyStats,
         detailedQuestions: analysis.detailedQuestions,
         details: analysis.detailedQuestions,
-        totalTime: submission.totalTimeTaken || 0,
+        totalTime: getAttemptSeconds(submission),
         submittedAt: submission.endTime || submission.updatedAt,
         totalMarks: analysis.totalMarks,
         score: analysis.score,
@@ -649,6 +690,11 @@ exports.getExamAnalysis = async (req, res) => {
       return res.status(404).json({ success: false, message: 'No completed submission found for this exam' });
     }
 
+    const lockedUntil = resultsLockedUntil(await Exam.findById(examId).select('settings'));
+    if (lockedUntil) {
+      return res.status(403).json({ success: false, message: `Results will be available after ${lockedUntil.toISOString()}`, resultsAvailableAt: lockedUntil });
+    }
+
     // Fetch all questions with correct answers
     const questions = await ExamQuestion.find({ exam: examId })
       .populate('subject', 'name')
@@ -667,7 +713,7 @@ exports.getExamAnalysis = async (req, res) => {
         nestedStats: analysis.nestedStats,
         detailedQuestions: analysis.detailedQuestions,
         details: analysis.detailedQuestions,
-        totalTime: submission.totalTimeTaken || 0,
+        totalTime: getAttemptSeconds(submission),
         submittedAt: submission.endTime || submission.updatedAt,
         totalMarks: analysis.totalMarks,
         score: analysis.score,
@@ -713,7 +759,7 @@ exports.getAdminExamAnalysis = async (req, res) => {
         nestedStats: analysis.nestedStats,
         detailedQuestions: analysis.detailedQuestions,
         details: analysis.detailedQuestions,
-        totalTime: submission.totalTimeTaken || 0,
+        totalTime: getAttemptSeconds(submission),
         submittedAt: submission.endTime || submission.updatedAt,
         student: submission.student || submission.publicUser,
         totalMarks: analysis.totalMarks,
@@ -724,6 +770,61 @@ exports.getAdminExamAnalysis = async (req, res) => {
 
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Server-side exam timing (do not trust the device clock).
+const EXAM_SUBMIT_GRACE_MS = 2 * 60 * 1000;
+
+// Latest moment an attempt may still save answers: the earlier of
+// (attempt start + duration) and the exam window end, plus a small grace.
+const getAttemptDeadline = (settings = {}, submission = {}) => {
+  const limits = [];
+  const startedAt = submission.startTime ? new Date(submission.startTime).getTime() : NaN;
+  const durationMs = Number(settings.durationMinutes) * 60 * 1000;
+  if (Number.isFinite(startedAt) && durationMs > 0) limits.push(startedAt + durationMs);
+  const windowEnd = settings.endTime ? new Date(settings.endTime).getTime() : NaN;
+  if (Number.isFinite(windowEnd)) limits.push(windowEnd);
+  return limits.length ? Math.min(...limits) + EXAM_SUBMIT_GRACE_MS : Infinity;
+};
+exports.getAttemptDeadline = getAttemptDeadline;
+
+// The test rules (proctoring, warning limit, duration) without starting the
+// clock, so the app can explain them and ask for the camera first: the
+// permission pop-up then never eats exam time.
+// Warning counters only ever go up: a reopened app starting from 0, or a late
+// request, must never lower the count already recorded for this attempt.
+const mergeViolations = (current, incoming) => {
+  const base = current && typeof current.toObject === 'function' ? current.toObject() : { ...(current || {}) };
+  const next = { ...base, ...(incoming || {}) };
+  ['tabSwitches', 'fullScreenExits'].forEach((key) => {
+    const a = Number(base[key]) || 0;
+    const b = Number(incoming?.[key]);
+    next[key] = Number.isFinite(b) ? Math.max(a, b) : a;
+  });
+  return next;
+};
+exports._mergeViolations = mergeViolations;
+
+exports.getExamRules = async (req, res) => {
+  try {
+    const exam = await Exam.findById(req.params.id).select('status settings security title');
+    if (!exam || exam.status !== 'PUBLISHED') {
+      return res.status(400).json({ success: false, message: 'Exam is not available' });
+    }
+    const ExamSubmission = require('./exam-submission.model');
+    const submission = await ExamSubmission.findOne({ exam: exam._id, student: req.user.userId }).select('status startTime');
+    return res.status(200).json({
+      success: true,
+      data: {
+        settings: exam.settings,
+        security: exam.security,
+        started: Boolean(submission),
+        submissionStatus: submission ? submission.status : 'NOT_STARTED',
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -739,7 +840,17 @@ exports.startExam = async (req, res) => {
     }
 
     let submission = await ExamSubmission.findOne({ exam: examId, student: studentId });
+
     if (!submission) {
+      const now = Date.now();
+      const opensAt = exam.settings?.startTime ? new Date(exam.settings.startTime).getTime() : NaN;
+      const closesAt = exam.settings?.endTime ? new Date(exam.settings.endTime).getTime() : NaN;
+      if (Number.isFinite(opensAt) && now < opensAt) {
+        return res.status(403).json({ success: false, message: 'This exam has not started yet' });
+      }
+      if (Number.isFinite(closesAt) && now > closesAt) {
+        return res.status(403).json({ success: false, message: 'This exam has ended' });
+      }
       submission = new ExamSubmission({
         exam: examId,
         student: studentId,
@@ -752,7 +863,8 @@ exports.startExam = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Exam already submitted' });
     }
 
-    const questions = await ExamQuestion.find({ exam: examId }).select('-options.isCorrect -correctAnswerText').populate('subject', 'name').sort({ order: 1 });
+    const questions = (await ExamQuestion.find({ exam: examId }).select('-options.isCorrect -correctAnswerText').populate('subject', 'name').sort({ order: 1 }))
+      .map((q) => inlineQuestionImages(q.toObject()));
 
     res.status(200).json({
       success: true,
@@ -768,9 +880,55 @@ exports.startExam = async (req, res) => {
   }
 };
 
+// App 1.0.7/1.0.8 (on the Play Store) send a typed integer answer under other
+// keys: as `selectedOptionId` (not an option id, so Mongoose refused the
+// whole save and the answer was graded as skipped), `answerText`,
+// `integerAnswer` or `answer`. Move such values to `numericAnswer` (or
+// `subjectiveAnswerText` for text), and drop any other non-ObjectId option ids.
+const OBJECT_ID_RE = /^[0-9a-f]{24}$/i;
+const TYPED_ALIASES = ['integerAnswer', 'numericalAnswer', 'answerText', 'answer', 'typedAnswer', 'value', 'textAnswer'];
+const isBlank = (v) => v === undefined || v === null || String(v).trim() === '';
+const normalizeAnswerPayload = (body = {}) => {
+  const isId = (v) => v === null || OBJECT_ID_RE.test(String(v));
+  const out = { ...(body || {}) };
+  if (!isBlank(out.selectedOptionId) && !isId(out.selectedOptionId)) {
+    if (isBlank(out.numericAnswer)) out.numericAnswer = String(out.selectedOptionId).trim();
+    delete out.selectedOptionId;
+  }
+  if (isBlank(out.numericAnswer) && isBlank(out.subjectiveAnswerText)) {
+    const alias = TYPED_ALIASES.map((k) => out[k]).find((v) => !isBlank(v) && typeof v !== 'object');
+    if (alias !== undefined) {
+      const text = String(alias).trim();
+      if (!isNaN(Number(text))) out.numericAnswer = text;
+      else out.subjectiveAnswerText = text;
+    }
+  }
+  TYPED_ALIASES.forEach((k) => delete out[k]);
+  if (out.selectedOptionId === '') out.selectedOptionId = null;
+  if (Array.isArray(out.selectedOptionIds)) out.selectedOptionIds = out.selectedOptionIds.filter((v) => v && isId(v));
+  if (typeof out.numericAnswer === 'number') {
+    out.numericAnswer = Number.isFinite(out.numericAnswer) ? String(out.numericAnswer) : undefined;
+  } else if (typeof out.numericAnswer === 'string') {
+    out.numericAnswer = out.numericAnswer.trim();
+  }
+  return out;
+};
+exports.normalizeAnswerPayload = normalizeAnswerPayload;
+
+// Two saves for one question can overlap (the app's debounced autosave and
+// Save & Next). The loser used to fail with a VersionError, which the app
+// ignores, so the answer was lost. Retry it on the fresh document instead.
 exports.saveAnswer = async (req, res) => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const outcome = await saveAnswerOnce(req, res, attempt < 2);
+    if (outcome !== RETRY) return outcome;
+  }
+};
+const RETRY = Symbol('retry');
+
+const saveAnswerOnce = async (req, res, canRetry) => {
   try {
-    const { questionId, selectedOptionId, status, violations, timeSpentSeconds } = req.body;
+    const { questionId, selectedOptionId, selectedOptionIds, numericAnswer, subjectiveAnswerText, status, violations, timeSpentSeconds } = normalizeAnswerPayload(req.body);
     const examId = req.params.id;
     const studentId = req.user.userId;
     const ExamSubmission = require('./exam-submission.model');
@@ -780,9 +938,26 @@ exports.saveAnswer = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid submission state' });
     }
 
+    const examTiming = await Exam.findById(examId).select('settings');
+    if (Date.now() > getAttemptDeadline(examTiming?.settings, submission)) {
+      return res.status(403).json({ success: false, message: 'Time is over for this exam' });
+    }
+
+    // A warnings-only update (the app reports each time the student leaves
+    // the test, so closing and reopening the app can't reset the count).
+    if (!questionId) {
+      if (!violations) return res.status(400).json({ success: false, message: 'questionId is required' });
+      submission.violations = mergeViolations(submission.violations, violations);
+      await submission.save();
+      return res.status(200).json({ success: true });
+    }
+
     const ansIndex = submission.answers.findIndex(a => a?.questionId && a.questionId?.toString() === questionId?.toString());
     if (ansIndex !== -1) {
-      submission.answers[ansIndex].selectedOptionId = selectedOptionId;
+      if (selectedOptionId !== undefined) submission.answers[ansIndex].selectedOptionId = selectedOptionId;
+      if (selectedOptionIds !== undefined) submission.answers[ansIndex].selectedOptionIds = selectedOptionIds;
+      if (numericAnswer !== undefined) submission.answers[ansIndex].numericAnswer = numericAnswer;
+      if (subjectiveAnswerText !== undefined) submission.answers[ansIndex].subjectiveAnswerText = subjectiveAnswerText;
       submission.answers[ansIndex].status = status || 'ANSWERED';
       if (Number.isFinite(Number(timeSpentSeconds))) {
         submission.answers[ansIndex].timeSpentSeconds = Math.max(Number(submission.answers[ansIndex].timeSpentSeconds || 0), Math.max(0, Math.floor(Number(timeSpentSeconds))));
@@ -791,19 +966,23 @@ exports.saveAnswer = async (req, res) => {
       submission.answers.push({
         questionId,
         selectedOptionId,
+        selectedOptionIds: selectedOptionIds || [],
+        numericAnswer,
+        subjectiveAnswerText,
         status: status || 'ANSWERED',
         timeSpentSeconds: Number.isFinite(Number(timeSpentSeconds)) ? Math.max(0, Math.floor(Number(timeSpentSeconds))) : 0
       });
     }
 
     if (violations) {
-      submission.violations = { ...submission.violations, ...violations };
+      submission.violations = mergeViolations(submission.violations, violations);
     }
 
     await submission.save();
-    res.status(200).json({ success: true });
+    return res.status(200).json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    if (canRetry && error?.name === 'VersionError') return RETRY;
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -869,8 +1048,27 @@ exports.submitExam = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid submission' });
     }
 
-    submission.status = req.body.isAutoSubmit ? 'AUTO_SUBMITTED' : 'SUBMITTED';
+    // A late submit is still accepted (so the attempt gets graded), but it is
+    // recorded as auto-submitted; answers saved after the deadline were refused.
+    const examTiming = await Exam.findById(examId).select('settings');
+    const isLate = Date.now() > getAttemptDeadline(examTiming?.settings, submission);
+    submission.status = (req.body.isAutoSubmit || isLate) ? 'AUTO_SUBMITTED' : 'SUBMITTED';
     submission.endTime = new Date();
+
+    if (req.body.timeSpentPerQuestion && typeof req.body.timeSpentPerQuestion === 'object') {
+      submission.timeSpentPerQuestion = Object.fromEntries(
+        Object.entries(req.body.timeSpentPerQuestion).map(([questionId, seconds]) => [
+          questionId,
+          Math.max(0, Math.floor(Number(seconds) || 0)),
+        ]),
+      );
+      // Keep the embedded answer record in sync so existing analysis screens
+      // can show per-question dwell time without a separate query.
+      for (const [questionId, seconds] of Object.entries(req.body.timeSpentPerQuestion)) {
+        const answer = submission.answers.find((item) => String(item.questionId) === String(questionId));
+        if (answer) answer.timeSpentSeconds = Math.max(Number(answer.timeSpentSeconds || 0), Math.max(0, Math.floor(Number(seconds) || 0)));
+      }
+    }
 
     const questions = await ExamQuestion.find({ exam: examId })
       .populate('subject', 'name')
@@ -882,33 +1080,31 @@ exports.submitExam = async (req, res) => {
     const topicScoresByKey = new Map();
 
     questions.forEach(q => {
-      const studentAns = submission.answers.find(a => a?.questionId && q?._id && a.questionId?.toString() === q._id?.toString());
+      const studentAns = findStudentAnswer(submission.answers, q?._id);
+      // Same rules as the analysis (answer-grading.js), so the saved score
+      // and the review agree. Marked-for-review with no value is unattempted.
+      const graded = gradeAnswer(q, studentAns);
       const qMarks = q.marks !== undefined && q.marks !== null ? q.marks : 4;
-      const qNegativeMarks = q.negativeMarks !== undefined && q.negativeMarks !== null ? q.negativeMarks : 1;
-
-      if (!studentAns || !studentAns.selectedOptionId) {
+      if (!graded.attempted) {
         unattempted++;
-      } else {
-        const correctOpt = q.options.find(o => o.isCorrect);
-        if (correctOpt && studentAns.selectedOptionId?.toString() === correctOpt._id?.toString()) {
-          correct++;
-          score += qMarks;
-          studentAns.isCorrect = true;
-          studentAns.marksObtained = qMarks;
-        } else {
-          wrong++;
-          score -= qNegativeMarks;
+        if (studentAns) {
           studentAns.isCorrect = false;
-          studentAns.marksObtained = -qNegativeMarks;
+          studentAns.marksObtained = 0;
         }
+      } else {
+        if (graded.isCorrect) correct++;
+        else wrong++;
+        score += graded.marksObtained;
+        studentAns.isCorrect = graded.isCorrect;
+        studentAns.marksObtained = graded.marksObtained;
       }
 
-      const subjectName = q.subject?.name || 'General';
-      const topicName = q.topic?.name || 'General';
+      const subjectName = q.subject?.name || q.subjectName || 'General';
+      const topicName = q.topic?.name || q.topicName || 'General';
       const key = `${subjectName}::${topicName}`;
       const topicScore = topicScoresByKey.get(key) || { subjectName, topicName, score: 0, totalMarks: 0 };
       topicScore.totalMarks += qMarks;
-      topicScore.score += studentAns?.marksObtained || 0;
+      topicScore.score += graded.marksObtained;
       topicScoresByKey.set(key, topicScore);
     });
 
@@ -918,7 +1114,7 @@ exports.submitExam = async (req, res) => {
     submission.totalUnattempted = unattempted;
 
     if (req.body.violations) {
-      submission.violations = { ...submission.violations, ...req.body.violations };
+      submission.violations = mergeViolations(submission.violations, req.body.violations);
     }
 
     await submission.save();

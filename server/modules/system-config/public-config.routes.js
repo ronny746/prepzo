@@ -28,6 +28,13 @@ router.get('/', async (req, res, next) => {
         updateUrl: config?.appUpdate?.updateUrl || "https://prepzo.com/download",
         updateNotes: config?.appUpdate?.updateNotes || "New version available with enhanced performance and features!"
       },
+      // Empty strings (never placeholder numbers) when the admin has not set them.
+      supportContact: {
+        phone: config?.supportContact?.phone || '',
+        email: config?.supportContact?.email || '',
+        website: config?.supportContact?.website || '',
+        whatsapp: config?.supportContact?.whatsapp || ''
+      },
       neetExamConfig: {
         examTitle: config?.neetExamConfig?.examTitle || defaultNeetConfig.examTitle,
         examDate: config?.neetExamConfig?.examDate || defaultNeetConfig.examDate,
@@ -51,6 +58,7 @@ router.get('/', async (req, res, next) => {
         updateUrl: "https://prepzo.com/download",
         updateNotes: "New version available with enhanced performance and features!"
       },
+      supportContact: { phone: '', email: '', website: '', whatsapp: '' },
       neetExamConfig: {
         examTitle: "NEET UG 2026",
         examDate: "2026-05-03T10:00:00.000Z",

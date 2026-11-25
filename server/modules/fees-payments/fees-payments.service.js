@@ -39,6 +39,8 @@ exports.processPayment = async (reqUser, payload) => {
     instituteId: reqUser.instituteId,
     feeRecordId,
     studentId: feeRecord.studentId,
+    // Needed so /courses/:id/enroll recognises a staff-recorded payment.
+    courseId: feeRecord.courseId,
     amountPaid,
     paymentMethod,
     transactionId,

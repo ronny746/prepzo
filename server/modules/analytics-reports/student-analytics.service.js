@@ -121,7 +121,11 @@ exports.getStudentPerformance = async (studentId) => {
       percentage: subTotalMarks > 0 ? ((sub.score / subTotalMarks) * 100).toFixed(2) : 0,
       totalCorrect: sub.totalCorrect,
       totalWrong: sub.totalWrong,
-      totalUnattempted: sub.totalUnattempted
+      totalUnattempted: sub.totalUnattempted,
+      // Share of attempted questions answered right (never negative, unlike percentage).
+      accuracy: ((sub.totalCorrect || 0) + (sub.totalWrong || 0)) > 0
+        ? Number((((sub.totalCorrect || 0) / ((sub.totalCorrect || 0) + (sub.totalWrong || 0))) * 100).toFixed(2))
+        : 0
     };
   });
 
@@ -147,10 +151,15 @@ exports.getStudentPerformance = async (studentId) => {
 
   const subjectWisePerformance = processStatsObject(examSubjectStats);
 
+  // Accuracy = correct / attempted across all exams (what the per-exam rows and
+  // the dashboard show). overallPercentage is marks after negative marking.
+  const examCorrect = recentExams.reduce((n, e) => n + (e.totalCorrect || 0), 0);
+  const examAttempted = recentExams.reduce((n, e) => n + (e.totalCorrect || 0) + (e.totalWrong || 0), 0);
   const overall = {
     totalExamsTaken,
     averageScore: totalExamsTaken > 0 ? (totalScoreObtained / totalExamsTaken).toFixed(2) : 0,
-    overallPercentage: totalPossibleScore > 0 ? ((totalScoreObtained / totalPossibleScore) * 100).toFixed(2) : 0
+    overallPercentage: totalPossibleScore > 0 ? ((totalScoreObtained / totalPossibleScore) * 100).toFixed(2) : 0,
+    accuracy: examAttempted > 0 ? Number(((examCorrect / examAttempted) * 100).toFixed(1)) : 0
   };
 
   // Fetch DPP / Practice Session stats
@@ -289,7 +298,14 @@ exports.getBatchPerformance = async ({ batchId, instituteId, subject }) => {
   let students = [];
 
   if (batchId && batchId !== 'all') {
-    batchDoc = await Batch.findById(batchId).populate('students', 'firstName lastName email metadata isActive').lean();
+    // A missing selection arrives as "undefined"/"null"; that used to throw a
+    // Mongoose CastError (500). Reject it as a bad request instead.
+    if (!require('mongoose').Types.ObjectId.isValid(String(batchId))) {
+      throw Object.assign(new Error('Please select a valid batch.'), { statusCode: 400 });
+    }
+    const batchQuery = { _id: batchId };
+    if (instituteId) batchQuery.instituteId = instituteId;
+    batchDoc = await Batch.findOne(batchQuery).populate('students', 'firstName lastName email metadata isActive').lean();
     if (batchDoc) {
       students = batchDoc.students || [];
     }

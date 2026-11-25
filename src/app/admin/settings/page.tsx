@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/index.jsx';
 import { Save, Lock, Smartphone, AlertTriangle, Image as ImageIcon, Plus, Trash2, Edit2, Link as LinkIcon, Upload, Check, Eye, EyeOff, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
+import { t } from '@/lib/i18n';
 
 interface Banner {
   _id: string;
@@ -25,7 +26,11 @@ export default function AdminSettingsPage() {
     minRequiredVersion: '1.0.0',
     isMandatory: false,
     updateUrl: 'https://prepzo.com/download',
-    updateNotes: 'New version available with enhanced performance and features!'
+    updateNotes: 'New version available with enhanced performance and features!',
+    supportPhone: '',
+    supportEmail: '',
+    supportWebsite: '',
+    supportWhatsapp: ''
   });
 
   // Banner states
@@ -57,13 +62,18 @@ export default function AdminSettingsPage() {
       
       if (result.success && result.data) {
         const appUp = result.data.appUpdate || {};
+        const support = result.data.supportContact || {};
         setSettings({
           enableRollNumberLogin: result.data.authSettings?.enableRollNumberLogin ?? true,
           latestVersion: appUp.latestVersion || '1.0.0',
           minRequiredVersion: appUp.minRequiredVersion || '1.0.0',
           isMandatory: appUp.isMandatory ?? false,
           updateUrl: appUp.updateUrl || 'https://prepzo.com/download',
-          updateNotes: appUp.updateNotes || 'New version available with enhanced performance and features!'
+          updateNotes: appUp.updateNotes || 'New version available with enhanced performance and features!',
+          supportPhone: support.phone || '',
+          supportEmail: support.email || '',
+          supportWebsite: support.website || '',
+          supportWhatsapp: support.whatsapp || ''
         });
       }
     } catch {
@@ -111,6 +121,12 @@ export default function AdminSettingsPage() {
             isMandatory: settings.isMandatory,
             updateUrl: settings.updateUrl,
             updateNotes: settings.updateNotes
+          },
+          supportContact: {
+            phone: settings.supportPhone.trim(),
+            email: settings.supportEmail.trim(),
+            website: settings.supportWebsite.trim(),
+            whatsapp: settings.supportWhatsapp.trim()
           }
         })
       });
@@ -639,6 +655,53 @@ export default function AdminSettingsPage() {
               onChange={(e) => setSettings({ ...settings, updateNotes: e.target.value })}
               className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
+          </div>
+
+          <div className="pt-2">
+            <h3 className="font-semibold text-gray-900">{t('admin.settings.supportContact.title')}</h3>
+            <p className="text-sm text-gray-500 mt-0.5 mb-3">{t('admin.settings.supportContact.description')}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{t('admin.settings.supportContact.phone')}</label>
+              <input 
+                type="tel"
+                placeholder={t('admin.settings.supportContact.phonePlaceholder')}
+                value={settings.supportPhone}
+                onChange={(e) => setSettings({ ...settings, supportPhone: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{t('admin.settings.supportContact.whatsapp')}</label>
+              <input 
+                type="tel"
+                placeholder={t('admin.settings.supportContact.whatsappPlaceholder')}
+                value={settings.supportWhatsapp}
+                onChange={(e) => setSettings({ ...settings, supportWhatsapp: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{t('admin.settings.supportContact.email')}</label>
+              <input 
+                type="email"
+                placeholder={t('admin.settings.supportContact.emailPlaceholder')}
+                value={settings.supportEmail}
+                onChange={(e) => setSettings({ ...settings, supportEmail: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{t('admin.settings.supportContact.website')}</label>
+              <input 
+                type="url"
+                placeholder={t('admin.settings.supportContact.websitePlaceholder')}
+                value={settings.supportWebsite}
+                onChange={(e) => setSettings({ ...settings, supportWebsite: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+            </div>
           </div>
         </div>
 

@@ -12,7 +12,7 @@ const { s3Client, bucketName } = require('../config/s3');
 const { User, Room, Message, Note, Recording, SharedFile } = require('../models/Schemas');
 const UserModel = require('../modules/users/users.model');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretjwtkey';
+const JWT_SECRET = require('../config/env').JWT_SECRET;
 
 const uploadsDir = path.resolve('./uploads');
 if (!fs.existsSync(uploadsDir)) {

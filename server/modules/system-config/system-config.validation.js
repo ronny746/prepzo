@@ -1,5 +1,16 @@
 const Joi = require('joi');
 
+// Digits and a leading/inner "+" only, so nothing but a dialable number is stored.
+const PHONE_PATTERN = /^[+\d]*$/;
+
+/** Support contact details; every field optional and may be cleared with ''. */
+exports.supportContactSchema = Joi.object({
+  phone: Joi.string().pattern(PHONE_PATTERN).max(20).allow('').optional(),
+  whatsapp: Joi.string().pattern(PHONE_PATTERN).max(20).allow('').optional(),
+  email: Joi.string().email().max(254).allow('').optional(),
+  website: Joi.string().uri({ scheme: ['http', 'https'] }).max(255).allow('').optional()
+});
+
 exports.updateConfigSchema = Joi.object({
   academicYear: Joi.string().optional(),
   activeTerm: Joi.string().optional(),
@@ -18,6 +29,7 @@ exports.updateConfigSchema = Joi.object({
     updateUrl: Joi.string().optional().allow('', null),
     updateNotes: Joi.string().optional().allow('', null)
   }).unknown(true).optional(),
+  supportContact: exports.supportContactSchema.optional(),
   neetExamConfig: Joi.object({
     examTitle: Joi.string().optional().allow('', null),
     examDate: Joi.date().iso().optional().allow(null, ''),

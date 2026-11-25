@@ -19,6 +19,13 @@ const systemConfigSchema = new mongoose.Schema({
     updateUrl: { type: String, default: "https://prepzo.com/download" },
     updateNotes: { type: String, default: "New version available with enhanced performance and features!" }
   },
+  // Shown in the mobile app's help/support screen; empty until an admin sets them.
+  supportContact: {
+    phone: { type: String, default: '' },
+    email: { type: String, default: '' },
+    website: { type: String, default: '' },
+    whatsapp: { type: String, default: '' }
+  },
   neetExamConfig: {
     examTitle: { type: String, default: "NEET UG 2026" },
     examDate: { type: Date, default: () => new Date("2026-05-03T10:00:00.000Z") },

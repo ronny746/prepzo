@@ -7,6 +7,7 @@ const validate = require('../../middlewares/validate.middleware');
 const { createUserSchema, updateUserSchema, linkParentStudentSchema, setupParentSchema } = require('./users.validation');
 const { ROLES } = require('../../config/constants');
 const uploadMemory = require('../../middlewares/uploadMemory.middleware');
+const { getMyAccess } = require('../../middlewares/contentAccess.middleware');
 const requireDeveloperToken = require('../../middlewares/developer.middleware');
 
 // Public route for downloading sample CSV template
@@ -72,6 +73,9 @@ router.get(
   '/me',
   UserController.getMe
 );
+
+// Must stay above '/:id' so "me/access" is not treated as a user id.
+router.get('/me/access', getMyAccess);
 
 router.put(
   '/me',

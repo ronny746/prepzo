@@ -102,6 +102,9 @@ class EasebuzzService {
       hash = ''
     } = body;
 
+    // Without key+salt anyone could compute a "valid" hash, so treat as invalid.
+    if (!key || !salt) return { isValid: false, calculatedHash: '', receivedHash: '' };
+
     const receivedHash = (hash || '').trim().toLowerCase();
     if (!receivedHash) return { isValid: false, calculatedHash: '', receivedHash: '' };
 

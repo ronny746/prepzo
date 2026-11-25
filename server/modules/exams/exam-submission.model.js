@@ -28,6 +28,12 @@ const examSubmissionSchema = new mongoose.Schema({
   endTime: {
     type: Date,
   },
+  // Captures dwell time even for questions that were viewed but left unanswered.
+  timeSpentPerQuestion: {
+    type: Map,
+    of: Number,
+    default: {},
+  },
   answers: [{
     questionId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -36,8 +42,14 @@ const examSubmissionSchema = new mongoose.Schema({
     selectedOptionId: {
       type: mongoose.Schema.Types.ObjectId, // For MCQs
     },
+    selectedOptionIds: [{
+      type: mongoose.Schema.Types.ObjectId, // For Multiple Correct
+    }],
     subjectiveAnswerText: {
-      type: String, // For Subjective
+      type: String, // For Subjective / Text
+    },
+    numericAnswer: {
+      type: String, // For Integer / Numerical
     },
     status: {
       type: String,

@@ -72,6 +72,10 @@ const practiceSessionSchema = new mongoose.Schema({
   answers: [{
     questionId: String,
     selectedOptionId: String,
+    selectedOptionIds: [String],
+    numericAnswer: String,
+    // Typed integer/numerical answer for questions that have no options.
+    subjectiveAnswerText: String,
     status: {
       type: String, // 'NOT_ANSWERED', 'ANSWERED', 'MARKED_FOR_REVIEW'
       default: 'NOT_ANSWERED',

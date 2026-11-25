@@ -45,9 +45,6 @@ exports.sendEmailOTP = async (to, otp) => {
     `,
   };
 
-  // LOG OTP TO TERMINAL SO USER CAN SEE IT
-  console.log(`\n\n=========================================\n🔥 OTP FOR ${to} IS: ${otp} 🔥\n=========================================\n\n`);
-
   try {
     const info = await transporter.sendMail(mailOptions);
     console.log('OTP Email sent: %s', info.messageId);

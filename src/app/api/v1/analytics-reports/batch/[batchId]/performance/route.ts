@@ -22,13 +22,6 @@ export async function GET(
       }
     }
 
-    // Fallback: If token decoding without verify in dev
-    if (!user && token) {
-      try {
-        user = jwt.decode(token);
-      } catch (e) {}
-    }
-
     if (!user) {
       return NextResponse.json({ success: false, message: 'Access denied. No valid token provided.' }, { status: 401 });
     }

@@ -6,7 +6,7 @@ const { requireRole } = require('../../middlewares/rbac.middleware');
 const { ROLES } = require('../../config/constants');
 const upload = require('../../middlewares/upload.middleware');
 const uploadMemory = require('../../middlewares/uploadMemory.middleware');
-const { checkAccess } = require('../../middlewares/contentAccess.middleware');
+const { checkAccess, checkExamAccess } = require('../../middlewares/contentAccess.middleware');
 
 router.use(authMiddleware);
 
@@ -102,21 +102,28 @@ router.get(
 router.get(
   '/:id/analysis',
   requireRole([ROLES.STUDENT]),
-  checkAccess('testSeries'),
+  checkExamAccess,
   ExamController.getExamAnalysis
+);
+
+router.get(
+  '/:id/rules',
+  requireRole([ROLES.STUDENT]),
+  checkExamAccess,
+  ExamController.getExamRules
 );
 
 router.post(
   '/:id/start',
   requireRole([ROLES.STUDENT]),
-  checkAccess('testSeries'),
+  checkExamAccess,
   ExamController.startExam
 );
 
 router.post(
   '/:id/save-answer',
   requireRole([ROLES.STUDENT]),
-  checkAccess('testSeries'),
+  checkExamAccess,
   ExamController.saveAnswer
 );
 
@@ -124,7 +131,7 @@ router.post(
 router.post(
   '/:id/snapshot',
   requireRole([ROLES.STUDENT]),
-  checkAccess('testSeries'),
+  checkExamAccess,
   uploadMemory.single('snapshot'),
   ExamController.uploadSnapshot
 );
@@ -132,7 +139,7 @@ router.post(
 router.post(
   '/:id/submit',
   requireRole([ROLES.STUDENT]),
-  checkAccess('testSeries'),
+  checkExamAccess,
   ExamController.submitExam
 );
 

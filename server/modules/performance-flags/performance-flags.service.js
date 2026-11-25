@@ -1,4 +1,5 @@
 const PerformanceFlag = require('./performance-flags.model');
+const { isAttempted } = require('../exams/answer-grading');
 
 exports.upsertFlags = async ({ instituteId, studentId, examId, topicScores, thresholds, getTopicFlag, sourceType = 'EXAM', sessionId }) => {
   const operations = topicScores.map(topic => ({
@@ -46,7 +47,7 @@ exports.updateFlagsFromDpp = async (session) => {
     tData.totalMarks += qMarks;
     if (ans && ans.isCorrect) {
       tData.score += qMarks;
-    } else if (ans && (ans.selectedOptionId && ans.status?.startsWith('ANSWERED'))) {
+    } else if (ans && (isAttempted(ans) && ans.status?.startsWith('ANSWERED'))) {
       tData.score -= (q.negativeMarks || 1);
     }
   });

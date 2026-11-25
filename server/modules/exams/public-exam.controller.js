@@ -2,6 +2,8 @@ const Exam = require('./exam.model');
 const ExamQuestion = require('./exam-question.model');
 const ExamSubmission = require('./exam-submission.model');
 const jwt = require('jsonwebtoken');
+const env = require('../../config/env');
+const { coerceAnswerInput, gradeAnswer } = require('./answer-grading');
 
 exports.getPublicExamDetails = async (req, res) => {
   try {
@@ -57,7 +59,7 @@ exports.startPublicExam = async (req, res) => {
     // Generate a temporary JWT for this submission session
     const token = jwt.sign(
       { submissionId: submission._id, examId: exam._id, public: true },
-      process.env.JWT_SECRET,
+      env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 
@@ -84,7 +86,7 @@ exports.submitPublicExam = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Unauthorized session.' });
     }
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, env.JWT_SECRET);
 
     if (decoded.examId !== id || !decoded.public) {
       return res.status(403).json({ success: false, message: 'Invalid token for this exam.' });
@@ -134,13 +136,27 @@ exports.submitPublicExam = async (req, res) => {
           marksObtained: isCorrect ? (q.marks || 4) : -(q.negativeMarks || 1)
         };
       } else {
-        // Subjective
+        // No-option questions: integer/numerical answers are auto-graded against
+        // correctAnswerText; truly subjective ones (no key) stay at 0 marks.
+        const input = coerceAnswerInput(studentAns);
+        const verdict = gradeAnswer(q, input);
+        if (verdict.attempted && verdict.gradable) {
+          if (verdict.isCorrect) {
+            totalCorrect++;
+            score += q.marks || 4;
+          } else {
+            totalWrong++;
+            score -= q.negativeMarks || 1;
+          }
+        }
         return {
           questionId: q._id,
-          subjectiveAnswerText: studentAns.subjectiveAnswerText,
+          subjectiveAnswerText: input.subjectiveAnswerText,
           status: studentAns.status,
-          isCorrect: false,
-          marksObtained: 0
+          isCorrect: verdict.attempted && verdict.gradable && verdict.isCorrect,
+          marksObtained: verdict.attempted && verdict.gradable
+            ? (verdict.isCorrect ? (q.marks || 4) : -(q.negativeMarks || 1))
+            : 0
         };
       }
     });
@@ -179,7 +195,7 @@ exports.uploadSnapshot = async (req, res) => {
     }
     const token = authHeader.split(' ')[1];
     const jwt = require('jsonwebtoken');
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, env.JWT_SECRET);
 
     if (decoded.examId !== id || !decoded.public) {
       return res.status(403).json({ success: false, message: 'Invalid token for this exam.' });

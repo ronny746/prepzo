@@ -16,7 +16,7 @@ const requireDeveloperToken = (req, res, next) => {
       return errorResponse(res, "Hard Deletion is disabled. Developer token is required.", null, 403);
     }
 
-    const decoded = jwt.verify(devToken, env.JWT_SECRET || 'your_jwt_secret');
+    const decoded = jwt.verify(devToken, env.JWT_SECRET);
     
     if (!decoded.isDeveloper) {
       return errorResponse(res, "Invalid developer token.", null, 403);
