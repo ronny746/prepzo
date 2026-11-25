@@ -245,7 +245,10 @@ class AppData {
 
   static const upcomingEvents = <Map<String, String>>[
     {'title': 'NEET Physics Unit Test', 'subtitle': 'Friday • 09:30 AM'},
-    {'title': 'All India NEET Mock Analysis', 'subtitle': 'Monday • Auditorium'},
+    {
+      'title': 'All India NEET Mock Analysis',
+      'subtitle': 'Monday • Auditorium',
+    },
     {'title': 'Parent Progress Review', 'subtitle': 'Wednesday • 11:00 AM'},
   ];
 

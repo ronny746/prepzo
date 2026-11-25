@@ -11,6 +11,9 @@ class CoursesState extends Equatable {
   final CourseModel? selectedCourse;
   final String? error;
   final bool isEnrolling;
+
+  /// False until my-batches loaded successfully; enrollment is unknown before that.
+  final bool myBatchesLoaded;
   final String? enrollSuccessMessage;
 
   const CoursesState({
@@ -20,6 +23,7 @@ class CoursesState extends Equatable {
     this.selectedCourse,
     this.error,
     this.isEnrolling = false,
+    this.myBatchesLoaded = false,
     this.enrollSuccessMessage,
   });
 
@@ -30,27 +34,35 @@ class CoursesState extends Equatable {
     CourseModel? selectedCourse,
     String? error,
     bool? isEnrolling,
+    bool? myBatchesLoaded,
     String? enrollSuccessMessage,
+    bool clearSelectedCourse = false,
   }) {
     return CoursesState(
       status: status ?? this.status,
       courses: courses ?? this.courses,
       myBatches: myBatches ?? this.myBatches,
-      selectedCourse: selectedCourse ?? this.selectedCourse,
+      // clearSelectedCourse lets a new load drop the previous course (copyWith
+      // alone cannot set a field back to null).
+      selectedCourse: clearSelectedCourse
+          ? null
+          : (selectedCourse ?? this.selectedCourse),
       error: error,
       isEnrolling: isEnrolling ?? this.isEnrolling,
+      myBatchesLoaded: myBatchesLoaded ?? this.myBatchesLoaded,
       enrollSuccessMessage: enrollSuccessMessage,
     );
   }
 
   @override
   List<Object?> get props => [
-        status,
-        courses,
-        myBatches,
-        selectedCourse,
-        error,
-        isEnrolling,
-        enrollSuccessMessage,
-      ];
+    status,
+    courses,
+    myBatches,
+    selectedCourse,
+    error,
+    isEnrolling,
+    myBatchesLoaded,
+    enrollSuccessMessage,
+  ];
 }

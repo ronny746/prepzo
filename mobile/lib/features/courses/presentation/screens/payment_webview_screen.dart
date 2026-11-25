@@ -17,7 +17,8 @@ class PaymentWebViewScreen extends StatefulWidget {
   State<PaymentWebViewScreen> createState() => _PaymentWebViewScreenState();
 }
 
-class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> with WidgetsBindingObserver {
+class _PaymentWebViewScreenState extends State<PaymentWebViewScreen>
+    with WidgetsBindingObserver {
   late final WebViewController _controller;
   bool _isLoading = true;
   bool _launchedExternalApp = false;
@@ -31,7 +32,9 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> with Widget
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
-      ..setUserAgent("Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+      ..setUserAgent(
+        "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+      )
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (String url) {
@@ -43,7 +46,9 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> with Widget
             _checkRedirectStatus(url);
           },
           onWebResourceError: (WebResourceError error) {
-            debugPrint("WebView Error: ${error.description} (${error.errorCode})");
+            debugPrint(
+              "WebView Error: ${error.description} (${error.errorCode})",
+            );
           },
           onNavigationRequest: (NavigationRequest request) {
             final url = request.url;
@@ -112,7 +117,8 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> with Widget
     final resultParam = uri?.queryParameters['result']?.toLowerCase();
 
     // Check for success indicators
-    bool isSuccess = statusParam == 'success' ||
+    bool isSuccess =
+        statusParam == 'success' ||
         statusParam == 'successful' ||
         statusParam == 'userpaid' ||
         statusParam == 'user_paid' ||
@@ -133,7 +139,8 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> with Widget
     }
 
     // Check for failure/cancel indicators
-    bool isFailure = statusParam == 'failed' ||
+    bool isFailure =
+        statusParam == 'failed' ||
         statusParam == 'failure' ||
         statusParam == 'usercancelled' ||
         statusParam == 'user_cancelled' ||
@@ -172,7 +179,9 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> with Widget
       if (rawUrl.startsWith('intent://')) {
         final schemeMatch = RegExp(r'scheme=([^;]+)').firstMatch(rawUrl);
         final scheme = schemeMatch?.group(1) ?? 'upi';
-        final mainPart = rawUrl.substring('intent://'.length).split('#Intent;')[0];
+        final mainPart = rawUrl
+            .substring('intent://'.length)
+            .split('#Intent;')[0];
         launchableUrl = '$scheme://$mainPart';
       }
 
@@ -180,12 +189,18 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> with Widget
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
-        await launchUrl(Uri.parse(rawUrl), mode: LaunchMode.externalApplication);
+        await launchUrl(
+          Uri.parse(rawUrl),
+          mode: LaunchMode.externalApplication,
+        );
       }
     } catch (e) {
       debugPrint("Error launching deep link: $e");
       try {
-        await launchUrl(Uri.parse(rawUrl), mode: LaunchMode.externalApplication);
+        await launchUrl(
+          Uri.parse(rawUrl),
+          mode: LaunchMode.externalApplication,
+        );
       } catch (_) {}
     }
   }

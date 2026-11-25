@@ -1,0 +1,12 @@
+{
+  "@@locale": "en",
+  "courseLoadFailed": "Could not load course details.",
+  "courseRetry": "Retry",
+  "courseEnrollFailed": "Enrollment failed. Please try again.",
+  "examLoadFailedTitle": "Couldn't load your exams",
+  "examLoadFailedMessage": "Something went wrong while loading your exams. Check your connection and pull down to retry.",
+  "notificationDetailTitle": "Notification Details",
+  "profileUpdateFailed": "Failed to update profile.",
+  "profileAvatarUploadFailed": "Your profile was saved, but the photo could not be uploaded.",
+  "studyPdfLoadFailed": "Could not load this document. Check your connection and try again."
+}

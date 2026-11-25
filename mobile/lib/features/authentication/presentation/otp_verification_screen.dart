@@ -149,10 +149,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
               ],
             ),
             const SizedBox(height: 28),
-            AuthButton(
-              text: 'Verify',
-              onPressed: _verify,
-            ),
+            AuthButton(text: 'Verify', onPressed: _verify),
           ],
         ),
       ),

@@ -1,16 +1,22 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lms/core/theme/app_theme.dart';
-import 'package:lms/core/config/app_config.dart';
+import 'package:lms/features/exams/data/answer_payload.dart';
 import 'package:lms/features/exams/data/models/exams_models.dart';
 import 'package:lms/features/exams/data/repositories/exams_repository.dart';
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:lms/core/widgets/math_html_renderer.dart';
-import 'package:lms/core/utils/html_cleaner.dart';
-import 'package:lms/core/utils/numeric_answer_formatter.dart';
-import 'package:lms/core/constants/exam_strings.dart';
+import 'package:lms/core/utils/question_html.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+
+/// Dark status-bar icons on the light practice screens.
+const SystemUiOverlayStyle _dppSystemUi = SystemUiOverlayStyle(
+  statusBarColor: Colors.transparent,
+  statusBarIconBrightness: Brightness.dark,
+  statusBarBrightness: Brightness.light,
+);
 
 class DppPracticePlayerScreen extends StatefulWidget {
   const DppPracticePlayerScreen({super.key, required this.exam});
@@ -26,11 +32,6 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
   int _currentQuestionIndex = 0;
   final Map<int, String> _answers = {};
   final Set<int> _lockedPracticeAnswers = {};
-  // One controller per question so a typed value survives navigation.
-  final Map<int, TextEditingController> _typedControllers = {};
-  // Typed answers edited but not yet sent; flushed on a debounce and on submit.
-  final Set<int> _dirtyTyped = {};
-  Timer? _typedDebounce;
   final Map<int, Map<String, dynamic>> _practiceFeedback = {};
   bool _isSubmitting = false;
   bool _isCheckingAnswer = false;
@@ -47,9 +48,73 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
   int _totalTimeSpentSeconds = 0;
   final Map<String, int> _timeSpentPerQuestion = {};
 
-  bool get _isDpp {
-    final title = widget.exam.title.trimLeft().toUpperCase();
-    return title.startsWith('DPP');
+  // Why: the server's sessionType is authoritative; the title is only a
+  // fallback until the session loads (a "Practice - ..." DPP title used to
+  // flip every DPP into practice mode and show "Incorrect!").
+  late String _sessionType = practiceSessionType(
+    null,
+    title: widget.exam.title,
+  );
+
+  bool get _isDpp => _sessionType == 'DPP';
+
+  // Typed answers: one controller per question + debounced silent save.
+  final Map<int, TextEditingController> _textControllers = {};
+  // One pending debounced save per question; flushed on dispose.
+  final PendingAnswerSaves _pendingTextSaves = PendingAnswerSaves();
+
+  /// True when the question is rendered as option cards (see build()).
+  bool _usesOptionCards(Map question) {
+    final type = (question['type'] ?? 'MCQ').toString().toUpperCase();
+    return type == 'MCQ' || type == 'TRUE_FALSE';
+  }
+
+  /// Wire-format answer fields for [answer] on [question] (see answer_payload).
+  Map<String, dynamic> _answerFields(Map question, String? answer) =>
+      buildAnswerFields(
+        type: (question['type'] ?? 'MCQ').toString(),
+        hasOptions: _usesOptionCards(question),
+        answer: answer,
+      );
+
+  /// Saves typed text ~800ms after the last keystroke. No lock or feedback:
+  /// "Check Answer" still does that for practice sessions.
+  void _onTextAnswerChanged(int index, String value) {
+    setState(() {
+      if (value.trim().isEmpty) {
+        _answers.remove(index);
+      } else {
+        _answers[index] = value;
+      }
+    });
+    if (_isSubmitted) return;
+    final question = _questions[index];
+    final qId = _getQuestionId(question);
+    final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
+    if (qId.isEmpty ||
+        token.startsWith('mock-') ||
+        widget.exam.id.startsWith('custom-')) {
+      return;
+    }
+    final answer = _answers[index];
+    final fields = _answerFields(question, answer);
+    final payload = {
+      'questionId': qId,
+      ...fields,
+      'status': resolveAnswerStatus(
+        status: answer == null ? 'NOT_ANSWERED' : 'ANSWERED',
+        answer: answer,
+        fields: fields,
+      ),
+      'timeSpentSeconds': _timeSpentPerQuestion[qId] ?? 0,
+    };
+    final repo = context.read<ExamsRepository>();
+    final examId = widget.exam.id;
+    // Self-contained closure so it can fire from dispose; silent on failure.
+    _pendingTextSaves.schedule(
+      index,
+      () => repo.savePracticeProgress(token, examId, payload),
+    );
   }
 
   bool get _isInteractivePractice => !_isDpp;
@@ -74,7 +139,8 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
   }
 
   String _getOptionId(Map opt, int index) {
-    final id = _extractId(opt['_id']) ??
+    final id =
+        _extractId(opt['_id']) ??
         _extractId(opt['id']) ??
         _extractId(opt['optionId']);
     if (id != null && id.isNotEmpty) return id;
@@ -92,8 +158,8 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
   @override
   void dispose() {
     _stopwatchTimer?.cancel();
-    _typedDebounce?.cancel();
-    for (final c in _typedControllers.values) {
+    _pendingTextSaves.flushAll();
+    for (final c in _textControllers.values) {
       c.dispose();
     }
     super.dispose();
@@ -110,8 +176,7 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
           final question = _questions[_currentQuestionIndex];
           final qId = _getQuestionId(question);
           if (qId.isNotEmpty) {
-            _timeSpentPerQuestion[qId] =
-                (_timeSpentPerQuestion[qId] ?? 0) + 1;
+            _timeSpentPerQuestion[qId] = (_timeSpentPerQuestion[qId] ?? 0) + 1;
           }
         }
       });
@@ -172,18 +237,25 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
         final List<dynamic> answers = sessionData['answers'] is List
             ? sessionData['answers']
             : [];
+        _sessionType = practiceSessionType(
+          sessionData,
+          title: widget.exam.title,
+        );
         final status = sessionData['status']?.toString() ?? 'IN_PROGRESS';
         final isCompleted = status == 'COMPLETED';
 
-        int totalTime = int.tryParse(
-          (sessionData['totalTimeSpentSeconds'] ?? 0).toString(),
-        ) ?? 0;
+        int totalTime =
+            int.tryParse(
+              (sessionData['totalTimeSpentSeconds'] ?? 0).toString(),
+            ) ??
+            0;
         int timeSum = 0;
 
         for (var a in answers) {
           if (a is Map) {
             final qId = _getQuestionId(a);
-            final t = int.tryParse((a['timeSpentSeconds'] ?? 0).toString()) ?? 0;
+            final t =
+                int.tryParse((a['timeSpentSeconds'] ?? 0).toString()) ?? 0;
             if (qId.isNotEmpty && t > 0) {
               _timeSpentPerQuestion[qId] = t;
               timeSum += t;
@@ -196,7 +268,8 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
           _backendAnswers = answers;
           _isSubmitted = isCompleted;
           _score = int.tryParse((sessionData['score'] ?? 0).toString()) ?? 0;
-          _totalMarks = int.tryParse((sessionData['totalMarks'] ?? 0).toString()) ?? 0;
+          _totalMarks =
+              int.tryParse((sessionData['totalMarks'] ?? 0).toString()) ?? 0;
           _totalTimeSpentSeconds = totalTime > 0 ? totalTime : timeSum;
           _isLoading = false;
         });
@@ -213,11 +286,9 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
               _answers[i] = ansOptId;
             }
           } else if (savedAns is Map) {
-            // No option picked: restore a typed (integer) answer on resume.
-            final typed = (savedAns['subjectiveAnswerText'] ?? '')
-                .toString()
-                .trim();
-            if (typed.isNotEmpty) _answers[i] = typed;
+            // Numeric / subjective / multi-select answers saved earlier.
+            final restored = restoreAnswerString(savedAns);
+            if (restored != null) _answers[i] = restored;
           }
         }
 
@@ -240,11 +311,7 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
     }
   }
 
-  Future<void> _saveAnswer(
-    int questionIndex,
-    String answer, {
-    bool typed = false,
-  }) async {
+  Future<void> _saveAnswer(int questionIndex, String answer) async {
     if (_isSubmitted) return;
     if (_isInteractivePractice &&
         _lockedPracticeAnswers.contains(questionIndex)) {
@@ -263,12 +330,15 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
         !token.startsWith('mock-') &&
         !widget.exam.id.startsWith('custom-')) {
       try {
+        final fields = _answerFields(question, answer);
         final payload = {
           'questionId': qId,
-          // Option-less (integer) questions go as free text, never as an option id.
-          'selectedOptionId': typed ? null : answer,
-          if (typed) 'subjectiveAnswerText': answer,
-          'status': 'ANSWERED',
+          ...fields,
+          'status': resolveAnswerStatus(
+            status: 'ANSWERED',
+            answer: answer,
+            fields: fields,
+          ),
           'timeSpentSeconds': _timeSpentPerQuestion[qId] ?? 0,
         };
         final result = await context
@@ -308,68 +378,13 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
     }
   }
 
-  /// A question with no options is answered by typing a number.
-  bool _isTypedQuestion(dynamic question) {
-    if (question is! Map) return false;
-    final opts = question['options'];
-    final type = question['type']?.toString() ?? 'MCQ';
-    // Mirrors the build() branch that decides between option cards and the box.
-    final hasOptions = opts is List &&
-        opts.isNotEmpty &&
-        (type == 'MCQ' || type == 'TRUE_FALSE');
-    return !hasOptions;
-  }
-
-  /// Sends typed answers that are still pending. Interactive practice sends
-  /// on "Check Answer" instead (sending locks the question), so it is skipped.
-  Future<void> _flushTypedAnswers() async {
-    _typedDebounce?.cancel();
-    if (_isInteractivePractice || _isSubmitted) return;
-    final pending = _dirtyTyped.toList();
-    _dirtyTyped.clear();
-    for (final i in pending) {
-      final v = _answers[i];
-      if (v != null && v.isNotEmpty) {
-        await _saveAnswer(i, v, typed: true);
-      }
-    }
-  }
-
-  void _onTypedChanged(int index, String raw) {
-    final v = raw.trim();
-    // An empty box means "not answered", so drop the key.
-    setState(() {
-      if (v.isEmpty) {
-        _answers.remove(index);
-      } else {
-        _answers[index] = v;
-      }
-    });
-    if (!_isInteractivePractice) {
-      if (v.isEmpty) {
-        _dirtyTyped.remove(index);
-      } else {
-        _dirtyTyped.add(index);
-        _typedDebounce?.cancel();
-        _typedDebounce = Timer(
-          const Duration(milliseconds: 700),
-          _flushTypedAnswers,
-        );
-      }
-    }
-  }
-
   Future<void> _handleCheckAnswer() async {
     final optionId = _answers[_currentQuestionIndex];
     if (optionId == null || _isCheckingAnswer) return;
 
     setState(() => _isCheckingAnswer = true);
     try {
-      await _saveAnswer(
-        _currentQuestionIndex,
-        optionId,
-        typed: _isTypedQuestion(_questions[_currentQuestionIndex]),
-      );
+      await _saveAnswer(_currentQuestionIndex, optionId);
     } finally {
       if (mounted) setState(() => _isCheckingAnswer = false);
     }
@@ -383,9 +398,8 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
 
     setState(() {
       _answers.remove(_currentQuestionIndex);
-      _dirtyTyped.remove(_currentQuestionIndex);
-      _typedControllers[_currentQuestionIndex]?.clear();
     });
+    _textControllers[_currentQuestionIndex]?.clear();
 
     if (qId.isNotEmpty &&
         !token.startsWith('mock-') &&
@@ -393,8 +407,7 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
       try {
         final payload = {
           'questionId': qId,
-          'selectedOptionId': null,
-          'subjectiveAnswerText': null,
+          ..._answerFields(question, null),
           'status': 'NOT_ANSWERED',
         };
         await context.read<ExamsRepository>().savePracticeProgress(
@@ -414,16 +427,13 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
     final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
 
     try {
-      await _flushTypedAnswers();
       if (!widget.exam.id.startsWith('custom-')) {
-        final res = await context.read<ExamsRepository>().submitPracticeSession(
-          token,
-          widget.exam.id,
-          {
-            'totalTimeSpentSeconds': _totalTimeSpentSeconds,
-            'timeSpentPerQuestion': _timeSpentPerQuestion,
-          },
-        );
+        final res = await context
+            .read<ExamsRepository>()
+            .submitPracticeSession(token, widget.exam.id, {
+              'totalTimeSpentSeconds': _totalTimeSpentSeconds,
+              'timeSpentPerQuestion': _timeSpentPerQuestion,
+            });
         final data = res['data'] is Map ? res['data'] as Map : res;
         _stopwatchTimer?.cancel();
         setState(() {
@@ -459,6 +469,40 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
     }
   }
 
+  Future<void> _confirmSubmitSession() async {
+    if (_isSubmitting || _isSubmitted || !mounted) return;
+    final answered = _answers.length.clamp(0, _questions.length);
+    final unanswered = (_questions.length - answered).clamp(
+      0,
+      _questions.length,
+    );
+    final shouldSubmit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Theme(
+        data: AppTheme.lightTheme,
+        child: AlertDialog(
+          title: Text('Submit ${_isDpp ? 'DPP' : 'practice'}?'),
+          content: Text(
+            'Answered: $answered\n'
+            'Unanswered: $unanswered\n\n'
+            'You can review your answers before submitting.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Review'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Submit'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (shouldSubmit == true) await _submitSession();
+  }
+
   Future<void> _handlePauseAndExit(bool isSubmitted) async {
     if (isSubmitted) {
       Navigator.of(context).pop();
@@ -467,21 +511,24 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
     final String label = _isDpp ? 'DPP' : 'Practice';
     final shouldExit = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Pause & Exit $label?'),
-        content: const Text(
-          'Your progress has been saved automatically. You can resume anytime.',
+      builder: (ctx) => Theme(
+        data: AppTheme.lightTheme,
+        child: AlertDialog(
+          title: Text('Pause & Exit $label?'),
+          content: const Text(
+            'Your progress has been saved automatically. You can resume anytime.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Resume'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Pause & Exit'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Resume'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Pause & Exit'),
-          ),
-        ],
       ),
     );
     if ((shouldExit ?? false) && mounted) {
@@ -489,63 +536,26 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
     }
   }
 
-  String _formatHtml(String? htmlString) {
-    return HtmlCleaner.clean(htmlString);
-  }
+  // The renderer resolves image URLs and entities itself; decoding "&lt;"
+  // here (the old HtmlCleaner) could turn "a &lt; b" into a broken tag.
+  String _formatHtml(String? htmlString) => htmlString ?? '';
 
-  bool _isDummyOptionText(String txt) {
-    final clean = txt
-        .replaceAll(RegExp(r'&nbsp;|\u00A0'), ' ')
-        .replaceAll(RegExp(r'</?(?:p|div|br)\s*/?>', caseSensitive: false), '')
-        .trim();
-    final dummyRegex = RegExp(
-      r'^(?:\([A-D1-4]\)|[A-D1-4][\.\)]?|option\s*[A-D1-4]|)$',
-      caseSensitive: false,
-    );
-    return clean.isEmpty || dummyRegex.hasMatch(clean);
-  }
+  // No label stripping: "3.32 mm", "A.P." and "(D) and (E)" are content.
+  String _getOptionHtml(Map<String, dynamic> opt) => optionHtml(opt);
 
-  String _getOptionHtml(Map<String, dynamic> opt) {
-    final rawText = opt['text'] ??
-        opt['optionText'] ??
-        opt['value'] ??
-        opt['title'] ??
-        opt['content'] ??
-        opt['statement'] ??
-        '';
-    final imageUrl =
-        opt['imageUrl'] ?? opt['image'] ?? opt['img'] ?? opt['url'];
-
-    String textStr = rawText.toString().trim();
-
-    if (imageUrl != null && imageUrl.toString().trim().isNotEmpty) {
-      final imgStr = imageUrl.toString().trim();
-      if (!textStr.toLowerCase().contains('<img') &&
-          !textStr.contains(imgStr)) {
-        textStr = textStr.isEmpty
-            ? '<img src="$imgStr" />'
-            : '$textStr<br/><img src="$imgStr" />';
-      }
-    }
-
-    String stripped = textStr
-        .replaceAll(
-          RegExp(
-            r'^(?:<p>|<div|<br\s*/?>|\s)*(?:\([A-D1-4]\)|[A-D1-4][\.\:\)])\s*',
-            caseSensitive: false,
-          ),
-          '',
-        )
-        .trim();
-    final finalText = stripped.isNotEmpty ? stripped : textStr;
-    return _formatHtml(finalText);
-  }
-
+  // The test screen always looks like the real (white) NTA exam screen,
+  // even when the rest of the app is in dark mode.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => Theme(
+    data: AppTheme.lightTheme,
+    child: Builder(builder: _buildPlayer),
+  );
+
+  Widget _buildPlayer(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
         appBar: AppBar(
+          systemOverlayStyle: _dppSystemUi,
           title: Text(widget.exam.title),
           leading: const BackButton(),
         ),
@@ -556,6 +566,7 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
     if (_questions.isEmpty) {
       return Scaffold(
         appBar: AppBar(
+          systemOverlayStyle: _dppSystemUi,
           title: Text(widget.exam.title),
           leading: const BackButton(),
         ),
@@ -564,17 +575,28 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
     }
 
     final question = _questions[_currentQuestionIndex];
-    final String questionText = question['questionText']?.toString() ?? 'Question';
+    final String questionText =
+        question['questionText']?.toString() ?? 'Question';
     final questionType = question['type']?.toString() ?? 'MCQ';
-    final List<Map<String, dynamic>> options =
-        List<Map<String, dynamic>>.from(question['options'] ?? []);
+    final List<Map<String, dynamic>> options = List<Map<String, dynamic>>.from(
+      question['options'] ?? [],
+    );
 
-    final imageValue = question['imageUrl'] ?? question['image'];
-    final String? imageUrl = imageValue is String ? imageValue : null;
+    final imageValue =
+        question['questionImageUrl'] ??
+        question['imageUrl'] ??
+        question['image'];
+    final String? imageUrl =
+        imageValue is String &&
+            imageValue.trim().isNotEmpty &&
+            !questionText.contains(imageValue.trim())
+        ? imageValue.trim()
+        : null;
 
     final String currentQId = _getQuestionId(question);
-    final int questionTimeSeconds =
-        currentQId.isNotEmpty ? (_timeSpentPerQuestion[currentQId] ?? 0) : 0;
+    final int questionTimeSeconds = currentQId.isNotEmpty
+        ? (_timeSpentPerQuestion[currentQId] ?? 0)
+        : 0;
 
     dynamic currentAnswerObj;
     if (_backendAnswers.isNotEmpty && currentQId.isNotEmpty) {
@@ -594,10 +616,8 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
         key: _scaffoldKey,
         endDrawer: _buildQuestionPalette(),
         appBar: AppBar(
-          title: Text(
-            widget.exam.title,
-            style: TextStyle(fontSize: 14),
-          ),
+          systemOverlayStyle: _dppSystemUi,
+          title: Text(widget.exam.title, style: TextStyle(fontSize: 14)),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_rounded),
             onPressed: () => _handlePauseAndExit(_isSubmitted),
@@ -609,7 +629,7 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                 icon: const Icon(Icons.pause_circle_outline_rounded, size: 16),
                 label: const Text('Pause'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor:                                       Color(0xFF1E40AF),
+                  foregroundColor: Color(0xFF1E40AF),
 
                   side: const BorderSide(color: Colors.black38),
                   padding: const EdgeInsets.symmetric(
@@ -627,7 +647,7 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
               ),
               const SizedBox(width: 6),
               FilledButton(
-                onPressed: _isSubmitting ? null : _submitSession,
+                onPressed: _isSubmitting ? null : _confirmSubmitSession,
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF10B981),
                   padding: const EdgeInsets.symmetric(
@@ -738,43 +758,33 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                     ),
                     const SizedBox(height: 16),
                     MathHtmlRenderer(
+                      key: ValueKey('dpp_q_$_currentQuestionIndex'),
                       htmlContent: _formatHtml(questionText),
-                      baseFontSize: 18.0,
+                      baseFontSize: 16.0,
                     ),
-                    if (imageUrl != null && imageUrl.isNotEmpty) ...[
+                    if (imageUrl != null) ...[
                       const SizedBox(height: 12),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 200),
-                          child: Image.network(
-                            imageUrl.startsWith('http')
-                                ? imageUrl
-                                : '${AppConfig.baseUrl.replaceAll('/api/v1', '')}$imageUrl',
-                            width: double.infinity,
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const SizedBox.shrink(),
-                          ),
-                        ),
-                      ),
+                      QuestionImage(url: imageUrl),
                     ],
                     const SizedBox(height: 24),
-                    if (options.isNotEmpty &&
-                        (questionType == 'MCQ' || questionType == 'TRUE_FALSE'))
+                    if (questionType == 'MCQ' || questionType == 'TRUE_FALSE')
                       ...options.asMap().entries.map((entry) {
                         final optIndex = entry.key;
                         final opt = entry.value;
                         final optId = _getOptionHtmlId(opt, optIndex);
                         final optHtml = _getOptionHtml(opt);
-                        
-                        final selectedAnsId = _answers[_currentQuestionIndex] ??
+
+                        final selectedAnsId =
+                            _answers[_currentQuestionIndex] ??
                             (currentAnswerObj is Map
-                                ? _extractId(currentAnswerObj['selectedOptionId'])
+                                ? _extractId(
+                                    currentAnswerObj['selectedOptionId'],
+                                  )
                                 : null);
                         final isSelected = selectedAnsId == optId;
 
-                        bool isCorrectOpt = opt['isCorrect'] == true ||
+                        bool isCorrectOpt =
+                            opt['isCorrect'] == true ||
                             opt['isCorrect'] == 'true' ||
                             opt['isCorrect'] == 1;
 
@@ -839,7 +849,8 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                               color: cardBg,
                               border: Border.all(
                                 color: cardBorder,
-                                width: (isSelected ||
+                                width:
+                                    (isSelected ||
                                         ((_isSubmitted || isPracticeChecked) &&
                                             isCorrectOpt))
                                     ? 2
@@ -872,9 +883,15 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                                 Expanded(
                                   child: Padding(
                                     padding: const EdgeInsets.only(top: 3),
+                                    // Not interactive: tapping the formula
+                                    // selects the whole option card.
                                     child: MathHtmlRenderer(
+                                      key: ValueKey(
+                                        'dpp_opt_${_currentQuestionIndex}_$optIndex',
+                                      ),
                                       htmlContent: optHtml,
                                       baseFontSize: 15.0,
+                                      interactive: false,
                                     ),
                                   ),
                                 ),
@@ -884,55 +901,53 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                         );
                       })
                     else
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 180),
-                          child: TextField(
-                            key: ValueKey('typed-$_currentQuestionIndex'),
-                            controller: _typedControllers.putIfAbsent(
-                              _currentQuestionIndex,
-                              () => TextEditingController(
-                                text: _answers[_currentQuestionIndex] ??
-                                    (currentAnswerObj is Map
-                                        ? (currentAnswerObj[
-                                                      'subjectiveAnswerText'] ??
-                                                  '')
-                                              .toString()
-                                        : ''),
-                              ),
-                            ),
-                            maxLines: 1,
-                            readOnly: _isSubmitted ||
-                                (_isInteractivePractice &&
-                                    _lockedPracticeAnswers.contains(
-                                      _currentQuestionIndex,
-                                    )),
-                            keyboardType: const TextInputType.numberWithOptions(
-                              signed: true,
-                              decimal: true,
-                            ),
-                            inputFormatters: [NumericAnswerFormatter()],
-                            decoration: InputDecoration(
-                              hintText: ExamStrings.integerHint,
-                              isDense: true,
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                    BorderSide(color: Colors.grey.shade300),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(
-                                  color: AppTheme.primary,
-                                  width: 2,
-                                ),
-                              ),
-                            ),
-                            onChanged: (val) =>
-                                _onTypedChanged(_currentQuestionIndex, val),
+                      TextField(
+                        key: ValueKey('dpp_answer_text_$_currentQuestionIndex'),
+                        controller: _textControllers.putIfAbsent(
+                          _currentQuestionIndex,
+                          () => TextEditingController(
+                            text: _answers[_currentQuestionIndex] ?? '',
                           ),
                         ),
+                        maxLines:
+                            (questionType == 'INTEGER' ||
+                                questionType == 'NUMERICAL')
+                            ? 1
+                            : 5,
+                        keyboardType:
+                            (questionType == 'INTEGER' ||
+                                questionType == 'NUMERICAL')
+                            ? const TextInputType.numberWithOptions(
+                                decimal: true,
+                                signed: true,
+                              )
+                            : TextInputType.multiline,
+                        inputFormatters:
+                            (questionType == 'INTEGER' ||
+                                questionType == 'NUMERICAL')
+                            ? [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'^[-+]?\d*\.?\d*'),
+                                ),
+                              ]
+                            : null,
+                        readOnly: _isSubmitted,
+                        decoration: InputDecoration(
+                          hintText: 'Type your answer here...',
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: AppTheme.primary,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        onChanged: (val) =>
+                            _onTextAnswerChanged(_currentQuestionIndex, val),
                       ),
                     if (_isInteractivePractice &&
                         _practiceFeedback.containsKey(
@@ -956,8 +971,8 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                             '';
                         final String explanationText =
                             rawExplanation.trim().isNotEmpty
-                                ? rawExplanation
-                                : 'No explanation provided.';
+                            ? rawExplanation
+                            : 'No explanation provided.';
 
                         return Container(
                           width: double.infinity,
@@ -966,9 +981,7 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                           decoration: BoxDecoration(
                             color: const Color(0xFFEFF6FF),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: const Color(0xFFBFDBFE),
-                            ),
+                            border: Border.all(color: const Color(0xFFBFDBFE)),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1063,7 +1076,8 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    if (!_isSubmitted && _answers[_currentQuestionIndex] != null)
+                    if (!_isSubmitted &&
+                        _answers[_currentQuestionIndex] != null)
                       OutlinedButton.icon(
                         onPressed: _clearResponse,
                         icon: const Icon(Icons.refresh_rounded, size: 16),
@@ -1114,9 +1128,13 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                         if (_isInteractivePractice &&
                             !_isSubmitted &&
                             _answers[_currentQuestionIndex] != null &&
-                            !_practiceFeedback.containsKey(_currentQuestionIndex))
+                            !_practiceFeedback.containsKey(
+                              _currentQuestionIndex,
+                            ))
                           ElevatedButton(
-                            onPressed: _isCheckingAnswer ? null : _handleCheckAnswer,
+                            onPressed: _isCheckingAnswer
+                                ? null
+                                : _handleCheckAnswer,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppTheme.primary,
                               foregroundColor: Colors.white,
@@ -1180,7 +1198,9 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                           ElevatedButton(
                             onPressed: _isSubmitted
                                 ? () => Navigator.pop(context)
-                                : (_isSubmitting ? null : _submitSession),
+                                : (_isSubmitting
+                                      ? null
+                                      : _confirmSubmitSession),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF10B981),
                               foregroundColor: Colors.white,
@@ -1205,9 +1225,7 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                                 : Text(
                                     _isSubmitted
                                         ? 'Close'
-                                        : (_isDpp
-                                              ? 'Submit'
-                                              : 'Submit'),
+                                        : (_isDpp ? 'Submit' : 'Submit'),
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 11,
@@ -1227,7 +1245,8 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
   }
 
   String _getOptionHtmlId(Map<String, dynamic> opt, int index) {
-    final id = _extractId(opt['_id']) ??
+    final id =
+        _extractId(opt['_id']) ??
         _extractId(opt['id']) ??
         _extractId(opt['optionId']);
     if (id != null && id.isNotEmpty) return id;
@@ -1294,7 +1313,7 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                 children: [
                   const Text(
                     'Question Palette',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                   ),
                   const Spacer(),
                   IconButton(
@@ -1334,12 +1353,7 @@ class _DppPracticePlayerScreenState extends State<DppPracticePlayerScreen> {
                   Color textColor = isAnswered ? Colors.white : Colors.black87;
 
                   if (_isSubmitted) {
-                    if (ansObj is Map &&
-                        (ansObj['selectedOptionId'] != null ||
-                            (ansObj['subjectiveAnswerText'] ?? '')
-                                .toString()
-                                .trim()
-                                .isNotEmpty)) {
+                    if (ansObj is Map && ansObj['selectedOptionId'] != null) {
                       if (ansObj['isCorrect'] == true) {
                         btnBg = const Color(0xFF22C55E); // Green
                         textColor = Colors.white;

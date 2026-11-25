@@ -17,7 +17,10 @@ class ParentSetupScreen extends StatelessWidget {
             children: [
               Icon(Icons.family_restroom_rounded, size: 64, color: Colors.grey),
               SizedBox(height: 16),
-              Text('Parent Portal coming soon', style: TextStyle(color: Colors.grey)),
+              Text(
+                'Parent Portal coming soon',
+                style: TextStyle(color: Colors.grey),
+              ),
             ],
           ),
         ),

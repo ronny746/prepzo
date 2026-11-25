@@ -54,3 +54,9 @@
 -dontwarn us.zoom.thirdparty.login.ThirdPartyLogin
 -dontwarn us.zoom.thirdparty.login.ThirdPartyLoginFactory
 -dontwarn us.zoom.thirdparty.login.util.CustomTabsHelper
+
+# Razorpay Proguard Rules (native checkout, ported from ARKE)
+-keepattributes *Annotation*
+-dontwarn com.razorpay.**
+-keep class com.razorpay.** {*;}
+-optimizations !class/merging/vertical*,!class/merging/horizontal*

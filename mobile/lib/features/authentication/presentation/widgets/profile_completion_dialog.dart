@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lms/core/theme/app_theme.dart';
+import 'package:lms/core/data/india_locations.dart';
 import 'package:lms/features/authentication/data/repositories/auth_repository.dart';
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -39,7 +40,8 @@ class ProfileCompletionDialog extends StatefulWidget {
   }
 
   @override
-  State<ProfileCompletionDialog> createState() => _ProfileCompletionDialogState();
+  State<ProfileCompletionDialog> createState() =>
+      _ProfileCompletionDialogState();
 }
 
 class _ProfileCompletionDialogState extends State<ProfileCompletionDialog> {
@@ -56,9 +58,15 @@ class _ProfileCompletionDialogState extends State<ProfileCompletionDialog> {
   @override
   void initState() {
     super.initState();
-    final first = widget.initialFirstName == 'Student' ? '' : (widget.initialFirstName ?? '');
-    final last = widget.initialLastName == '.' ? '' : (widget.initialLastName ?? '');
-    final email = (widget.initialEmail?.contains('@skd.com') ?? true) ? '' : (widget.initialEmail ?? '');
+    final first = widget.initialFirstName == 'Student'
+        ? ''
+        : (widget.initialFirstName ?? '');
+    final last = widget.initialLastName == '.'
+        ? ''
+        : (widget.initialLastName ?? '');
+    final email = (widget.initialEmail?.contains('@skd.com') ?? true)
+        ? ''
+        : (widget.initialEmail ?? '');
 
     _firstNameController = TextEditingController(text: first);
     _lastNameController = TextEditingController(text: last);
@@ -130,7 +138,10 @@ class _ProfileCompletionDialogState extends State<ProfileCompletionDialog> {
               // Gradient Header
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 24,
+                  horizontal: 20,
+                ),
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     colors: [Color(0xFF0040DD), Color(0xFF007AFF)],
@@ -190,7 +201,10 @@ class _ProfileCompletionDialogState extends State<ProfileCompletionDialog> {
                               label: 'FIRST NAME *',
                               hint: 'First Name',
                               controller: _firstNameController,
-                              validator: (val) => val == null || val.trim().isEmpty ? 'Required' : null,
+                              validator: (val) =>
+                                  val == null || val.trim().isEmpty
+                                  ? 'Required'
+                                  : null,
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -213,8 +227,10 @@ class _ProfileCompletionDialogState extends State<ProfileCompletionDialog> {
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
                         validator: (val) {
-                          if (val == null || val.trim().isEmpty) return 'Email is required';
-                          if (!val.contains('@') || !val.contains('.')) return 'Enter valid email';
+                          if (val == null || val.trim().isEmpty)
+                            return 'Email is required';
+                          if (!val.contains('@') || !val.contains('.'))
+                            return 'Enter valid email';
                           return null;
                         },
                       ),
@@ -233,19 +249,27 @@ class _ProfileCompletionDialogState extends State<ProfileCompletionDialog> {
                       Row(
                         children: [
                           Expanded(
-                            child: _buildInput(
+                            child: _buildLocationDropdown(
                               label: 'STATE',
-                              hint: 'State',
-                              icon: PhosphorIcons.mapPin,
-                              controller: _stateController,
+                              hint: 'Select state',
+                              value: _stateController.text,
+                              items: indiaStates,
+                              onChanged: (value) => setState(() {
+                                _stateController.text = value ?? '';
+                                _cityController.clear();
+                              }),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: _buildInput(
+                            child: _buildLocationDropdown(
                               label: 'CITY',
-                              hint: 'City',
-                              controller: _cityController,
+                              hint: 'Select city',
+                              value: _cityController.text,
+                              items: citiesForState(_stateController.text),
+                              onChanged: (value) => setState(
+                                () => _cityController.text = value ?? '',
+                              ),
                             ),
                           ),
                         ],
@@ -261,18 +285,26 @@ class _ProfileCompletionDialogState extends State<ProfileCompletionDialog> {
                             backgroundColor: AppTheme.primary,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
                             elevation: 2,
                           ),
                           child: _isLoading
                               ? const SizedBox(
                                   height: 20,
                                   width: 20,
-                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Text(
                                   'Save Profile & Continue 🚀',
-                                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
+                                  ),
                                 ),
                         ),
                       ),
@@ -315,9 +347,18 @@ class _ProfileCompletionDialogState extends State<ProfileCompletionDialog> {
           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.normal),
-            prefixIcon: icon != null ? PhosphorIcon(icon, size: 18, color: Colors.grey) : null,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            hintStyle: const TextStyle(
+              fontSize: 12,
+              color: Colors.grey,
+              fontWeight: FontWeight.normal,
+            ),
+            prefixIcon: icon != null
+                ? PhosphorIcon(icon, size: 18, color: Colors.grey)
+                : null,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
             filled: true,
             fillColor: const Color(0xFFF9FAFB),
             border: OutlineInputBorder(
@@ -331,6 +372,60 @@ class _ProfileCompletionDialogState extends State<ProfileCompletionDialog> {
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppTheme.primary, width: 1.2),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocationDropdown({
+    required String label,
+    required String hint,
+    required String value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    final selected = items.contains(value) ? value : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF6B7280),
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          initialValue: selected,
+          isExpanded: true,
+          hint: Text(
+            hint,
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          items: items
+              .map(
+                (item) => DropdownMenuItem(
+                  value: item,
+                  child: Text(item, overflow: TextOverflow.ellipsis),
+                ),
+              )
+              .toList(),
+          onChanged: items.isEmpty ? null : onChanged,
+          decoration: InputDecoration(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+            filled: true,
+            fillColor: const Color(0xFFF9FAFB),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
             ),
           ),
         ),

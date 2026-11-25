@@ -27,13 +27,13 @@ class StatTile extends StatelessWidget {
         children: [
           Row(
             children: [
-
               Text(
                 value,
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-              ),              const Spacer(),
+              ),
+              const Spacer(),
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(

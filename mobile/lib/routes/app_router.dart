@@ -5,6 +5,7 @@ import 'package:lms/features/authentication/presentation/otp_verification_screen
 import 'package:lms/features/authentication/presentation/reset_password_screen.dart';
 import 'package:lms/features/authentication/presentation/splash_screen.dart';
 import 'package:lms/features/dashboard/presentation/main_layout_screen.dart';
+import 'package:lms/features/notifications/data/models/notification_model.dart';
 import 'package:lms/features/notifications/presentation/notification_detail_screen.dart';
 import 'package:lms/features/notifications/presentation/notification_list_screen.dart';
 import 'package:lms/features/parent/presentation/parent_dashboard_screen.dart';
@@ -101,8 +102,14 @@ class AppRouter {
       case AppRoutes.notifications:
         return _buildRoute(const NotificationListScreen(), settings);
       case AppRoutes.notificationDetail:
-        final title = settings.arguments as String? ?? 'Notification';
-        return _buildRoute(NotificationDetailScreen(title: title), settings);
+        final arg = settings.arguments;
+        return _buildRoute(
+          NotificationDetailScreen(
+            notification: arg is AppNotificationModel ? arg : null,
+            title: arg is String ? arg : null,
+          ),
+          settings,
+        );
       case AppRoutes.settings:
         return _buildRoute(const SettingsScreen(), settings);
       case AppRoutes.support:

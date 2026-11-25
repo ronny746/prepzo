@@ -233,6 +233,9 @@ class DashboardRepository {
       mentorSessions: _parseMentorSessions(
         _extractList(mentorSessionsResult.data),
       ),
+      access: classesResult.error == null
+          ? StudentFeatureAccess.fromBatches(enrolledBatchesList)
+          : const StudentFeatureAccess.unknown(),
       announcements: const [],
       activities: const [],
       classesError: classesResult.error,

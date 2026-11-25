@@ -14,7 +14,13 @@ class ProfileCubit extends Cubit<ProfileState> {
   final ProfileRepository _profileRepository;
 
   Future<void> loadProfile(String token) async {
-    emit(state.copyWith(status: ProfileStatus.loading, errorMessage: null, successMessage: null));
+    emit(
+      state.copyWith(
+        status: ProfileStatus.loading,
+        errorMessage: null,
+        successMessage: null,
+      ),
+    );
 
     try {
       final profile = await _profileRepository.getProfile(token);
@@ -55,7 +61,13 @@ class ProfileCubit extends Cubit<ProfileState> {
     String? address,
     String? avatarUrl,
   }) async {
-    emit(state.copyWith(status: ProfileStatus.updating, errorMessage: null, successMessage: null));
+    emit(
+      state.copyWith(
+        status: ProfileStatus.updating,
+        errorMessage: null,
+        successMessage: null,
+      ),
+    );
 
     try {
       final updatedProfile = await _profileRepository.updateProfile(
@@ -81,73 +93,19 @@ class ProfileCubit extends Cubit<ProfileState> {
         ),
       );
     } on ApiException catch (error) {
-      if (state.profile != null) {
-        final current = state.profile!;
-        final fullName = '$firstName $lastName'.trim();
-        final localUpdated = current.copyWith(
-          name: fullName.isNotEmpty ? fullName : current.name,
-          firstName: firstName,
-          lastName: lastName,
-          email: email,
-          mobile: mobile,
-          gender: gender ?? current.gender,
-          studentClass: studentClass ?? current.studentClass,
-          city: city ?? current.city,
-          state: stateName ?? current.state,
-          address: address ?? current.address,
-          avatarUrl: avatarUrl ?? current.avatarUrl,
-        );
-
-        emit(
-          state.copyWith(
-            status: ProfileStatus.success,
-            profile: localUpdated,
-            successMessage: 'Profile updated successfully!',
-            errorMessage: null,
-          ),
-        );
-        return;
-      }
-
+      // Surface the server message; never fake a local "success".
       emit(
         state.copyWith(
           status: ProfileStatus.failure,
           errorMessage: error.message,
         ),
       );
-    } catch (e) {
-      if (state.profile != null) {
-        final current = state.profile!;
-        final fullName = '$firstName $lastName'.trim();
-        final localUpdated = current.copyWith(
-          name: fullName.isNotEmpty ? fullName : current.name,
-          firstName: firstName,
-          lastName: lastName,
-          email: email,
-          mobile: mobile,
-          gender: gender ?? current.gender,
-          studentClass: studentClass ?? current.studentClass,
-          city: city ?? current.city,
-          state: stateName ?? current.state,
-          address: address ?? current.address,
-          avatarUrl: avatarUrl ?? current.avatarUrl,
-        );
-
-        emit(
-          state.copyWith(
-            status: ProfileStatus.success,
-            profile: localUpdated,
-            successMessage: 'Profile updated successfully!',
-            errorMessage: null,
-          ),
-        );
-        return;
-      }
-
+    } catch (_) {
       emit(
         state.copyWith(
           status: ProfileStatus.failure,
-          errorMessage: 'Failed to update profile.',
+          // null: the screen shows the localized profileUpdateFailed text.
+          errorMessage: null,
         ),
       );
     }
@@ -160,7 +118,13 @@ class ProfileCubit extends Cubit<ProfileState> {
     required String email,
     required String phone,
   }) async {
-    emit(state.copyWith(status: ProfileStatus.updating, errorMessage: null, successMessage: null));
+    emit(
+      state.copyWith(
+        status: ProfileStatus.updating,
+        errorMessage: null,
+        successMessage: null,
+      ),
+    );
 
     try {
       await _profileRepository.setupParent(

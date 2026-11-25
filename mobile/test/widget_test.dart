@@ -58,10 +58,13 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
+    // The login screen is for students and parents, signing in by mobile OTP.
+    // Prepzo shows its wordmark as "prep" + "zo".
     expect(find.text('prep'), findsOneWidget);
     expect(find.text('zo'), findsOneWidget);
     expect(find.text('Student'), findsOneWidget);
-    expect(find.text('Enter 10-digit mobile number'), findsOneWidget);
+    expect(find.text('Parent'), findsOneWidget);
+    expect(find.text('REGISTERED MOBILE NUMBER'), findsOneWidget);
     expect(find.text('Get OTP'), findsOneWidget);
   });
 }

@@ -19,6 +19,9 @@ class PushNotificationService {
   /// No-op until Firebase is restored (no device token is registered).
   Future<void> startForSession(AuthSession session) async {}
 
+  /// No-op until Firebase is restored (sign-out hook used by AuthBloc).
+  Future<void> stopForSession(String? accessToken) async {}
+
   /// No-op until Firebase is restored.
   Future<void> logEvent(String name, {Map<String, Object>? parameters}) async {}
 

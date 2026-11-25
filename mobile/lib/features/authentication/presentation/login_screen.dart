@@ -20,13 +20,16 @@ class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
   final _otpController = TextEditingController();
 
-  String _selectedRole = 'student'; // mobile app supports student and parent accounts only
+  String _selectedRole =
+      'student'; // mobile app supports student and parent accounts only
   int _currentStep = 0; // 0: Phone Number, 1: OTP / Roll Number
   bool _usePassword = false;
 
   Timer? _timer;
-  // Resend wait; 3 min was too long for a student whose OTP did not arrive.
-  static const int _resendSeconds = 60;
+  // Resend becomes available after this many seconds (QA 1.4). The server
+  // has no resend cooldown (server/modules/auth requestOtp) and every OTP
+  // stays valid for 5 minutes, so a short wait is safe.
+  static const int _resendSeconds = 30;
   int _startSeconds = _resendSeconds;
   bool _canResend = false;
 
@@ -51,6 +54,10 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        _stopTimer();
+        return;
+      }
       if (_startSeconds <= 1) {
         _stopTimer();
         setState(() => _canResend = true);
@@ -403,10 +410,14 @@ class _LoginScreenState extends State<LoginScreen> {
         SizedBox(height: 6.h),
         TextField(
           controller: _phoneController,
-          keyboardType: TextInputType.phone,
+          // Digits only, at most 10 (QA 1.2). TextInputType.number shows a
+          // plain digit pad; the formatters also clean pasted text.
+          keyboardType: TextInputType.number,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(10),
+          ],
           maxLength: 10,
-          // Digits only: a hardware keyboard could previously type letters.
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           onChanged: (_) => setState(() {}),
           style: TextStyle(
             color: Colors.white,
@@ -512,7 +523,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // STEP 2: OTP / Roll Number Input UI with 3-minute Resend Timer
+  // STEP 2: OTP input with a short resend timer
   Widget _buildStepOtpInput(AuthState state) {
     return Column(
       key: const ValueKey('step_otp'),
@@ -583,6 +594,12 @@ class _LoginScreenState extends State<LoginScreen> {
           keyboardType: _usePassword
               ? TextInputType.visiblePassword
               : TextInputType.number,
+          inputFormatters: _usePassword
+              ? null
+              : [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(6),
+                ],
           textAlign: TextAlign.center,
           obscureText: _usePassword,
           style: TextStyle(

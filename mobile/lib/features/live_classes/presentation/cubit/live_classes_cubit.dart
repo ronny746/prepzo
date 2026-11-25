@@ -59,8 +59,7 @@ class LiveClassesCubit extends Cubit<LiveClassesState> {
           .setTransports(['websocket'])
           .enableReconnection()
           .build(),
-    )
-      ..on('live-class:changed', (_) => _refreshFromRealtime());
+    )..on('live-class:changed', (_) => _refreshFromRealtime());
 
     _fallbackRefreshTimer ??= Timer.periodic(
       const Duration(seconds: 45),

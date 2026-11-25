@@ -4,6 +4,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:lms/core/config/app_config.dart';
+import 'package:lms/core/theme/app_theme.dart';
 
 class LiveClassWebViewScreen extends StatefulWidget {
   final String? meetingLink;
@@ -320,6 +321,7 @@ class _LiveClassWebViewScreenState extends State<LiveClassWebViewScreen> {
         appBar: AppBar(
           backgroundColor: const Color(0xFF0F172A),
           foregroundColor: Colors.white,
+          systemOverlayStyle: AppTheme.darkScreenSystemUi,
           elevation: 0,
           title: const Text(
             'Live Class',

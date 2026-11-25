@@ -27,11 +27,11 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   void _sendMessage() {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
-    
+
     final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
     context.read<ChatRoomCubit>().sendMessage(token, widget.room.id, text);
     _messageController.clear();
-    
+
     Future.delayed(const Duration(milliseconds: 300), () {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -50,7 +50,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     String getChatName() {
       if (widget.room.type.toUpperCase() == 'GROUP') return widget.room.name;
       try {
-        final other = widget.room.participants.firstWhere((p) => p.id != currentUserId);
+        final other = widget.room.participants.firstWhere(
+          (p) => p.id != currentUserId,
+        );
         return '${other.name} (${other.role.toUpperCase()})';
       } catch (_) {
         return 'Direct Message';
@@ -58,11 +60,11 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     }
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.card(context),
       appBar: AppBar(
         title: Text(getChatName()),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
+        backgroundColor: AppTheme.card(context),
+        foregroundColor: AppTheme.ink(context),
         elevation: 1,
       ),
       body: Column(
@@ -70,13 +72,14 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           Expanded(
             child: BlocBuilder<ChatRoomCubit, ChatRoomState>(
               builder: (context, state) {
-                if (state.status == ChatRoomStatus.loading && state.messages.isEmpty) {
+                if (state.status == ChatRoomStatus.loading &&
+                    state.messages.isEmpty) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (state.messages.isEmpty) {
                   return const Center(child: Text('No messages yet. Say hi!'));
                 }
-                
+
                 return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
@@ -84,12 +87,17 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   itemBuilder: (context, index) {
                     final message = state.messages[index];
                     final isMe = message.senderId == currentUserId;
-                    
+
                     return Align(
-                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                      alignment: isMe
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                         decoration: BoxDecoration(
                           color: isMe ? AppTheme.primary : Colors.grey.shade100,
                           borderRadius: BorderRadius.only(
@@ -99,7 +107,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                             bottomRight: Radius.circular(isMe ? 0 : 20),
                           ),
                         ),
-                        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.75,
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -111,7 +121,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
-                                    color: AppTheme.primary.withValues(alpha: 0.8),
+                                    color: AppTheme.primary.withValues(
+                                      alpha: 0.8,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -145,7 +157,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AppTheme.card(context),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.05),
@@ -168,7 +180,10 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                         ),
                         filled: true,
                         fillColor: Colors.grey.shade100,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 10,
+                        ),
                       ),
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _sendMessage(),
@@ -178,7 +193,11 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   CircleAvatar(
                     backgroundColor: AppTheme.primary,
                     child: IconButton(
-                      icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                      icon: const Icon(
+                        Icons.send,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                       onPressed: _sendMessage,
                     ),
                   ),
@@ -190,7 +209,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       ),
     );
   }
-  
+
   @override
   void dispose() {
     _messageController.dispose();

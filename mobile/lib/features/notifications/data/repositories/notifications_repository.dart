@@ -12,7 +12,10 @@ class NotificationsRepository {
       try {
         final response = await _apiClient.get('/notifications', token: token);
         if (response['success'] == true || response.containsKey('data')) {
-          final list = response['data'] ?? response['notifications'] ?? response['notices'];
+          final list =
+              response['data'] ??
+              response['notifications'] ??
+              response['notices'];
           if (list is List) {
             return list
                 .whereType<Map<String, dynamic>>()

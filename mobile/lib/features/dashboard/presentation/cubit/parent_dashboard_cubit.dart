@@ -34,8 +34,8 @@ class ParentDashboardState extends Equatable {
 
 class ParentDashboardCubit extends Cubit<ParentDashboardState> {
   ParentDashboardCubit({required DashboardRepository dashboardRepository})
-      : _dashboardRepository = dashboardRepository,
-        super(const ParentDashboardState());
+    : _dashboardRepository = dashboardRepository,
+      super(const ParentDashboardState());
 
   final DashboardRepository _dashboardRepository;
 

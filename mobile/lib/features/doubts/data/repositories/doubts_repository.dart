@@ -9,11 +9,16 @@ class DoubtsRepository {
 
   Future<List<DoubtBatchModel>> getStudentBatches(String token) async {
     try {
-      final response = await _apiClient.get('/batches/my-batches', token: token);
+      final response = await _apiClient.get(
+        '/batches/my-batches',
+        token: token,
+      );
       final data = response['data'];
       if (data is List) {
         return data
-            .map((json) => DoubtBatchModel.fromJson(json as Map<String, dynamic>))
+            .map(
+              (json) => DoubtBatchModel.fromJson(json as Map<String, dynamic>),
+            )
             .toList();
       }
     } catch (e) {
@@ -23,6 +28,8 @@ class DoubtsRepository {
   }
 
   Future<List<TeacherModel>> getTeachers(String token) async {
+    final Map<String, TeacherModel> teacherMap = {};
+
     try {
       final response = await _apiClient.get(
         '/users',
@@ -31,25 +38,42 @@ class DoubtsRepository {
       );
       final data = response['data'];
       if (data is List) {
-        return data
-            .whereType<Map<String, dynamic>>()
-            .where((u) {
-              final r = u['role']?.toString().toLowerCase();
-              return r == 'teacher';
-            })
-            .map((json) => TeacherModel.fromJson(json))
-            .toList();
+        for (final item in data) {
+          if (item is Map<String, dynamic>) {
+            final tm = TeacherModel.fromJson(item);
+            if (tm.id.isNotEmpty) teacherMap[tm.id] = tm;
+          }
+        }
       }
     } catch (e) {
-      // Fallback or empty list
+      // Fallback
     }
-    return [];
+
+    // Also get teachers from enrolled batches if /users returned empty
+    if (teacherMap.isEmpty) {
+      try {
+        final batches = await getStudentBatches(token);
+        for (final b in batches) {
+          for (final t in b.teachers) {
+            if (t.id.isNotEmpty) teacherMap[t.id] = t;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return teacherMap.values.toList();
   }
 
-  Future<List<DoubtModel>> getDoubtsByBatch(String token, String batchId) async {
+  Future<List<DoubtModel>> getDoubtsByBatch(
+    String token,
+    String batchId,
+  ) async {
     if (batchId.isEmpty) return [];
     try {
-      final response = await _apiClient.get('/doubts/batch/$batchId', token: token);
+      final response = await _apiClient.get(
+        '/doubts/batch/$batchId',
+        token: token,
+      );
       final data = response['data'];
       if (data is List) {
         return data

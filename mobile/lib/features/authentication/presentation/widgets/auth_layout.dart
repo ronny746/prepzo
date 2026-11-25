@@ -12,20 +12,12 @@ class AuthLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The gradient is dark, so the status bar needs light icons, and the system
-    // navigation bar must match the gradient's end colour. Without that, the
-    // light scaffold/nav colour shows as a cream strip under the screen when the
-    // keyboard opens.
+    // Dark screen: white status-bar icons and a dark navigation bar so no
+    // cream strip shows at the bottom (QA 1.1 / 1.5).
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light, // Android
-        statusBarBrightness: Brightness.dark, // iOS
-        systemNavigationBarColor: Color(0xFF02170F),
-        systemNavigationBarIconBrightness: Brightness.light,
-      ),
+      value: AppTheme.darkScreenSystemUi,
       child: Scaffold(
-        backgroundColor: const Color(0xFF02170F),
+        backgroundColor: AppTheme.authBackground,
         body: Stack(
           children: [
             // Background Gradient

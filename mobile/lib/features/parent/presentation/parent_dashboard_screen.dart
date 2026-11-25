@@ -26,7 +26,7 @@ void showLinkStudentModal(
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: Colors.white,
+    backgroundColor: AppTheme.card(context),
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
@@ -47,7 +47,7 @@ void showLinkStudentModal(
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Row(
+                    Row(
                       children: [
                         Icon(
                           Icons.person_add_alt_1_rounded,
@@ -60,7 +60,7 @@ void showLinkStudentModal(
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: Colors.black87,
+                            color: AppTheme.ink(context),
                           ),
                         ),
                       ],
@@ -208,8 +208,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                const CircleAvatar(
-                  backgroundColor: Colors.white,
+                CircleAvatar(
+                  backgroundColor: AppTheme.card(context),
                   radius: 28,
                   child: Text(
                     'P',
@@ -542,13 +542,13 @@ class _HomeTab extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        const Expanded(
+                        Expanded(
                           child: Text(
                             'Performance & Exams',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: Colors.black87,
+                              color: AppTheme.ink(context),
                             ),
                           ),
                         ),
@@ -601,12 +601,12 @@ class _HomeTab extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const Text(
+                      Text(
                         'Linked Students',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                          color: AppTheme.ink(context),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -621,10 +621,10 @@ class _HomeTab extends StatelessWidget {
                         ),
                         child: Text(
                           '${data.children.length}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
-                            color: Colors.black87,
+                            color: AppTheme.ink(context),
                           ),
                         ),
                       ),
@@ -678,12 +678,12 @@ class _HomeTab extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           'No Students Linked',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
-                            color: Colors.black87,
+                            color: AppTheme.ink(context),
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -715,7 +715,9 @@ class _HomeTab extends StatelessWidget {
                   ),
                 )
               else
-                ...data.children.map((child) => _buildChildOverviewCard(child)),
+                ...data.children.map(
+                  (child) => _buildChildOverviewCard(context, child),
+                ),
 
               const SizedBox(height: 40),
             ],
@@ -725,7 +727,7 @@ class _HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildChildOverviewCard(DashboardItem child) {
+  Widget _buildChildOverviewCard(BuildContext context, DashboardItem child) {
     final avatarUrl = child.status ?? '';
     final name = child.title;
     final phone = child.subtitle;
@@ -762,10 +764,10 @@ class _HomeTab extends StatelessWidget {
                   children: [
                     Text(
                       name,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
-                        color: Colors.black87,
+                        color: AppTheme.ink(context),
                       ),
                     ),
                     if (phone.isNotEmpty) ...[
@@ -796,7 +798,7 @@ class _HomeTab extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.grey.shade50,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade200),
+                border: Border.all(color: AppTheme.line(context)),
               ),
               child: Row(
                 children: [

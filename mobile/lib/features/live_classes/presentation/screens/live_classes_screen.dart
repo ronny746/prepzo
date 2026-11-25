@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lms/core/widgets/load_error_view.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lms/core/widgets/app_scaffold.dart';
 import 'package:lms/features/live_classes/presentation/cubit/live_classes_cubit.dart';
@@ -95,7 +96,20 @@ class _LiveClassesScreenState extends State<LiveClassesScreen> {
           if (state is LiveClassesLoading) {
             return const Center(child: CircularProgressIndicator());
           } else if (state is LiveClassesError) {
-            return Center(child: Text('Error: ${state.message}'));
+            final locked = state.message.toLowerCase().contains('current plan');
+            return LoadErrorView(
+              title: locked
+                  ? 'Live classes are not in your plan'
+                  : 'Could not load live classes',
+              message: locked
+                  ? 'Your current course does not include live classes.'
+                  : 'Check your internet connection and try again.',
+              onAction: locked
+                  ? null
+                  : () => context.read<LiveClassesCubit>().fetchLiveClasses(
+                      context.read<AuthBloc>().state.session?.accessToken ?? '',
+                    ),
+            );
           } else if (state is LiveClassesLoaded) {
             if (state.classes.isEmpty) {
               return const Center(
@@ -173,9 +187,13 @@ class _LiveClassesScreenState extends State<LiveClassesScreen> {
                               color: Colors.grey,
                             ),
                             const SizedBox(width: 4),
-                            Text(
-                              'Teacher: ${liveClass.teacherName}',
-                              style: const TextStyle(color: Colors.grey),
+                            Expanded(
+                              child: Text(
+                                'Teacher: ${liveClass.teacherName}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: Colors.grey),
+                              ),
                             ),
                           ],
                         ),

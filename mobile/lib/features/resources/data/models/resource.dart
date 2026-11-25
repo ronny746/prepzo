@@ -24,7 +24,9 @@ class Resource {
   factory Resource.fromJson(Map<String, dynamic> json) {
     String? bId;
     if (json['batchId'] is Map<String, dynamic>) {
-      bId = json['batchId']['_id']?.toString() ?? json['batchId']['id']?.toString();
+      bId =
+          json['batchId']['_id']?.toString() ??
+          json['batchId']['id']?.toString();
     } else if (json['batchId'] != null) {
       bId = json['batchId'].toString();
     }

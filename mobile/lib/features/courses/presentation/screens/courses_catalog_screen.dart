@@ -41,7 +41,9 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? AppTheme.darkBackground : const Color(0xFFF8FAFC),
+      backgroundColor: isDark
+          ? AppTheme.darkBackground
+          : const Color(0xFFF8FAFC),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async => _loadData(),
@@ -65,19 +67,24 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
               ),
               BlocBuilder<CoursesCubit, CoursesState>(
                 builder: (context, state) {
-                  if (state.status == CoursesStatus.loading && state.courses.isEmpty) {
+                  if (state.status == CoursesStatus.loading &&
+                      state.courses.isEmpty) {
                     return SliverFillRemaining(
                       child: Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const CircularProgressIndicator(color: AppTheme.primary),
+                            const CircularProgressIndicator(
+                              color: AppTheme.primary,
+                            ),
                             const SizedBox(height: 16),
                             Text(
                               'Fetching courses...',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                                color: isDark
+                                    ? Colors.white60
+                                    : const Color(0xFF64748B),
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -101,7 +108,11 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
                                   color: AppTheme.error.withValues(alpha: 0.1),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const PhosphorIcon(PhosphorIcons.warningCircle, color: AppTheme.error, size: 40),
+                                child: const PhosphorIcon(
+                                  PhosphorIcons.warningCircle,
+                                  color: AppTheme.error,
+                                  size: 40,
+                                ),
                               ),
                               const SizedBox(height: 16),
                               Text(
@@ -109,24 +120,34 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.w800,
                                   fontSize: 18,
-                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                  color: isDark
+                                      ? Colors.white
+                                      : const Color(0xFF1E293B),
                                 ),
                               ),
                               const SizedBox(height: 6),
                               Text(
                                 state.error!,
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 13,
+                                ),
                               ),
                               const SizedBox(height: 20),
                               ElevatedButton.icon(
                                 onPressed: _loadData,
-                                icon: const PhosphorIcon(PhosphorIcons.arrowsClockwise, size: 18),
+                                icon: const PhosphorIcon(
+                                  PhosphorIcons.arrowsClockwise,
+                                  size: 18,
+                                ),
                                 label: const Text('Try Again'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppTheme.primary,
                                   foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                 ),
                               ),
                             ],
@@ -153,10 +174,16 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
                             Container(
                               padding: const EdgeInsets.all(20),
                               decoration: BoxDecoration(
-                                color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF1F5F9),
+                                color: isDark
+                                    ? Colors.white.withValues(alpha: 0.05)
+                                    : const Color(0xFFF1F5F9),
                                 shape: BoxShape.circle,
                               ),
-                              child: const PhosphorIcon(PhosphorIcons.magnifyingGlass, size: 40, color: Color(0xFF94A3B8)),
+                              child: const PhosphorIcon(
+                                PhosphorIcons.magnifyingGlass,
+                                size: 40,
+                                color: Color(0xFF94A3B8),
+                              ),
                             ),
                             const SizedBox(height: 16),
                             Text(
@@ -164,13 +191,18 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
                               style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 16,
-                                color: isDark ? Colors.white : const Color(0xFF334155),
+                                color: isDark
+                                    ? Colors.white
+                                    : const Color(0xFF334155),
                               ),
                             ),
                             const SizedBox(height: 6),
                             const Text(
                               'Try searching with a different term.',
-                              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                              style: TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 13,
+                              ),
                             ),
                             if (_searchQuery.isNotEmpty) ...[
                               const SizedBox(height: 16),
@@ -182,7 +214,9 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
                                   });
                                 },
                                 style: OutlinedButton.styleFrom(
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                 ),
                                 child: const Text('Clear Search'),
                               ),
@@ -194,26 +228,28 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
                   }
 
                   return SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 8,
+                    ),
                     sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final course = filteredCourses[index];
-                          final isEnrolled = state.myBatches.any((b) => b.courseId == course.id);
-                          return _CourseCard(
-                            course: course,
-                            isEnrolled: isEnrolled,
-                            onTap: () {
-                              Navigator.pushNamed(
-                                context,
-                                AppRoutes.courseDetail,
-                                arguments: course.id,
-                              );
-                            },
-                          );
-                        },
-                        childCount: filteredCourses.length,
-                      ),
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final course = filteredCourses[index];
+                        final isEnrolled = state.myBatches.any(
+                          (b) => b.courseId == course.id,
+                        );
+                        return _CourseCard(
+                          course: course,
+                          isEnrolled: isEnrolled,
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              AppRoutes.courseDetail,
+                              arguments: course.id,
+                            );
+                          },
+                        );
+                      }, childCount: filteredCourses.length),
                     ),
                   );
                 },
@@ -234,7 +270,9 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
           children: [
             // Back Button
             Material(
-              color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.white,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.white,
               borderRadius: BorderRadius.circular(14),
               child: InkWell(
                 onTap: () => Navigator.maybePop(context),
@@ -244,7 +282,9 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: isDark ? Colors.white.withValues(alpha: 0.1) : const Color(0xFFE2E8F0),
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.1)
+                          : const Color(0xFFE2E8F0),
                     ),
                   ),
                   child: PhosphorIcon(
@@ -310,7 +350,9 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
         color: isDark ? AppTheme.darkSurface : Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2E8F0),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFFE2E8F0),
         ),
         boxShadow: [
           BoxShadow(
@@ -328,7 +370,11 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
           color: isDark ? Colors.white : const Color(0xFF0F172A),
         ),
         decoration: InputDecoration(
-          icon: const PhosphorIcon(PhosphorIcons.magnifyingGlass, color: Color(0xFF94A3B8), size: 20),
+          icon: const PhosphorIcon(
+            PhosphorIcons.magnifyingGlass,
+            color: Color(0xFF94A3B8),
+            size: 20,
+          ),
           hintText: 'Search courses, tags, or topics...',
           border: InputBorder.none,
           enabledBorder: InputBorder.none,
@@ -339,7 +385,11 @@ class _CoursesCatalogScreenState extends State<CoursesCatalogScreen> {
           hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-                  icon: const PhosphorIcon(PhosphorIcons.x, size: 16, color: Color(0xFF94A3B8)),
+                  icon: const PhosphorIcon(
+                    PhosphorIcons.x,
+                    size: 16,
+                    color: Color(0xFF94A3B8),
+                  ),
                   onPressed: () {
                     _searchController.clear();
                     setState(() => _searchQuery = '');
@@ -368,13 +418,20 @@ class _CourseCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final hexColorStr = course.color?.replaceAll('#', '');
-    final courseColor = hexColorStr != null && hexColorStr.length == 6
-        ? Color(int.parse('FF$hexColorStr', radix: 16))
-        : AppTheme.primary;
+    final courseColor = AppTheme.readableAccent(
+      context,
+      hexColorStr != null && hexColorStr.length == 6
+          ? Color(int.parse('FF$hexColorStr', radix: 16))
+          : AppTheme.primary,
+    );
 
     int? discountPercent;
-    if (course.actualFee != null && course.actualFee! > course.fee && course.actualFee! > 0) {
-      discountPercent = (((course.actualFee! - course.fee) / course.actualFee!) * 100).round();
+    if (course.actualFee != null &&
+        course.actualFee! > course.fee &&
+        course.actualFee! > 0) {
+      discountPercent =
+          (((course.actualFee! - course.fee) / course.actualFee!) * 100)
+              .round();
     }
 
     return Container(
@@ -383,7 +440,9 @@ class _CourseCard extends StatelessWidget {
         color: isDark ? AppTheme.darkSurface : Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2E8F0),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFFE2E8F0),
           width: 1,
         ),
         boxShadow: [
@@ -445,12 +504,20 @@ class _CourseCard extends StatelessWidget {
                                   spacing: 6,
                                   runSpacing: 4,
                                   children: [
-                                    if (course.tag != null && course.tag!.isNotEmpty)
+                                    if (course.tag != null &&
+                                        course.tag!.isNotEmpty)
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
                                         decoration: BoxDecoration(
-                                          color: AppTheme.primary.withValues(alpha: 0.1),
-                                          borderRadius: BorderRadius.circular(8),
+                                          color: AppTheme.primary.withValues(
+                                            alpha: 0.1,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                         child: Text(
                                           course.tag!,
@@ -462,17 +529,25 @@ class _CourseCard extends StatelessWidget {
                                           ),
                                         ),
                                       ),
-                                    if (course.badge != null && course.badge!.isNotEmpty)
+                                    if (course.badge != null &&
+                                        course.badge!.isNotEmpty)
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
                                         decoration: BoxDecoration(
-                                          color: AppTheme.secondary.withValues(alpha: 0.12),
-                                          borderRadius: BorderRadius.circular(8),
+                                          color: AppTheme.brandInk(
+                                            context,
+                                          ).withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                         child: Text(
                                           course.badge!.toUpperCase(),
-                                          style: const TextStyle(
-                                            color: AppTheme.secondary,
+                                          style: TextStyle(
+                                            color: AppTheme.brandInk(context),
                                             fontSize: 10,
                                             fontWeight: FontWeight.w800,
                                             letterSpacing: 0.3,
@@ -481,10 +556,17 @@ class _CourseCard extends StatelessWidget {
                                       ),
                                     if (discountPercent != null)
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
                                         decoration: BoxDecoration(
-                                          color: AppTheme.success.withValues(alpha: 0.12),
-                                          borderRadius: BorderRadius.circular(8),
+                                          color: AppTheme.success.withValues(
+                                            alpha: 0.12,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                         child: Text(
                                           '$discountPercent% OFF',
@@ -503,7 +585,9 @@ class _CourseCard extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w900,
-                                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                    color: isDark
+                                        ? Colors.white
+                                        : const Color(0xFF0F172A),
                                     letterSpacing: -0.4,
                                     height: 1.3,
                                   ),
@@ -522,7 +606,9 @@ class _CourseCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 12,
-                            color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                            color: isDark
+                                ? Colors.white60
+                                : const Color(0xFF64748B),
                             fontWeight: FontWeight.w500,
                             height: 1.4,
                           ),
@@ -536,25 +622,43 @@ class _CourseCard extends StatelessWidget {
                           runSpacing: 6,
                           children: course.features.take(3).map((f) {
                             return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
-                                color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF8FAFC),
+                                color: isDark
+                                    ? Colors.white.withValues(alpha: 0.05)
+                                    : const Color(0xFFF8FAFC),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFE2E8F0),
+                                  color: isDark
+                                      ? Colors.white.withValues(alpha: 0.05)
+                                      : const Color(0xFFE2E8F0),
                                 ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const PhosphorIcon(PhosphorIcons.checkCircle, size: 12, color: AppTheme.success),
+                                  const PhosphorIcon(
+                                    PhosphorIcons.checkCircle,
+                                    size: 12,
+                                    color: AppTheme.success,
+                                  ),
                                   const SizedBox(width: 4),
-                                  Text(
-                                    f,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: isDark ? Colors.white70 : const Color(0xFF334155),
+                                  // Flexible + ellipsis: long feature strings must not overflow the chip.
+                                  Flexible(
+                                    child: Text(
+                                      f,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark
+                                            ? Colors.white70
+                                            : const Color(0xFF334155),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -565,60 +669,85 @@ class _CourseCard extends StatelessWidget {
                       ],
 
                       const SizedBox(height: 16),
-                      Divider(height: 1, color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2E8F0)),
+                      Divider(
+                        height: 1,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.08)
+                            : const Color(0xFFE2E8F0),
+                      ),
                       const SizedBox(height: 14),
 
                       // Pricing & Action Button Row
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'COURSE FEE',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF94A3B8),
-                                  letterSpacing: 0.6,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Row(
+                          // Expanded + FittedBox: two 5-digit fees shrink
+                          // instead of pushing the button off a narrow card.
+                          Expanded(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  if (course.actualFee != null && course.actualFee! > course.fee) ...[
-                                    Text(
-                                      '₹${course.actualFee}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        decoration: TextDecoration.lineThrough,
-                                        color: isDark ? Colors.white38 : const Color(0xFF94A3B8),
-                                        fontWeight: FontWeight.bold,
+                                  const Text(
+                                    'COURSE FEE',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF94A3B8),
+                                      letterSpacing: 0.6,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      if (course.actualFee != null &&
+                                          course.actualFee! > course.fee) ...[
+                                        Text(
+                                          '₹${course.actualFee}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            decoration:
+                                                TextDecoration.lineThrough,
+                                            color: isDark
+                                                ? Colors.white38
+                                                : const Color(0xFF94A3B8),
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                      ],
+                                      Text(
+                                        '₹${course.fee}',
+                                        style: const TextStyle(
+                                          fontSize: 19,
+                                          fontWeight: FontWeight.w900,
+                                          color: AppTheme.primary,
+                                          letterSpacing: -0.5,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                  ],
-                                  Text(
-                                    '₹${course.fee}',
-                                    style: const TextStyle(
-                                      fontSize: 19,
-                                      fontWeight: FontWeight.w900,
-                                      color: AppTheme.primary,
-                                      letterSpacing: -0.5,
-                                    ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            ],
+                            ),
                           ),
+                          const SizedBox(width: 8),
                           ElevatedButton(
                             onPressed: onTap,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: isEnrolled ? AppTheme.success : AppTheme.primary,
+                              backgroundColor: isEnrolled
+                                  ? AppTheme.success
+                                  : AppTheme.primary,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 10,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                               elevation: 0,
                             ),
                             child: Row(
@@ -626,11 +755,17 @@ class _CourseCard extends StatelessWidget {
                               children: [
                                 Text(
                                   isEnrolled ? 'Enrolled' : 'View Details',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
                                 ),
                                 if (!isEnrolled) ...[
                                   const SizedBox(width: 4),
-                                  const PhosphorIcon(PhosphorIcons.arrowRight, size: 14),
+                                  const PhosphorIcon(
+                                    PhosphorIcons.arrowRight,
+                                    size: 14,
+                                  ),
                                 ],
                               ],
                             ),

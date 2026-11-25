@@ -31,7 +31,9 @@ class StudentInformationScreen extends StatelessWidget {
     final userCode = profile?.userCode.isNotEmpty == true ? profile!.userCode : (user?.id.substring(0, 8).toUpperCase() ?? 'STD-8840');
 
     return Scaffold(
-      backgroundColor: isDark ? AppTheme.darkBackground : const Color(0xFFF8FAFC),
+      backgroundColor: isDark
+          ? AppTheme.darkBackground
+          : const Color(0xFFF8FAFC),
       appBar: AppBar(
         leading: IconButton(
           icon: const PhosphorIcon(PhosphorIcons.arrowLeft, size: 20),
@@ -71,7 +73,11 @@ class StudentInformationScreen extends StatelessWidget {
                         color: Colors.white24,
                         shape: BoxShape.circle,
                       ),
-                      child: const PhosphorIcon(PhosphorIcons.graduationCap, color: Colors.white, size: 32),
+                      child: const PhosphorIcon(
+                        PhosphorIcons.graduationCap,
+                        color: Colors.white,
+                        size: 32,
+                      ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -112,7 +118,11 @@ class StudentInformationScreen extends StatelessWidget {
                   _infoTile('Student ID / Code', userCode, isDark),
                   _infoTile('Admission Number', 'ADM-PREPZO-5567', isDark),
                   _infoTile('Roll Number', rollNo, isDark),
-                  _infoTile('Class & Section', '$studentClass ($section)', isDark),
+                  _infoTile(
+                    'Class & Section',
+                    '$studentClass ($section)',
+                    isDark,
+                  ),
                   _infoTile('Academic Batch', session, isDark),
                 ],
               ),
@@ -125,10 +135,18 @@ class StudentInformationScreen extends StatelessWidget {
                 isDark: isDark,
                 children: [
                   _infoTile('Target Exam', targetExam, isDark),
-                  _infoTile('Enrolled Subjects', 'Physics, Chemistry, Mathematics', isDark),
+                  _infoTile(
+                    'Enrolled Subjects',
+                    'Physics, Chemistry, Mathematics',
+                    isDark,
+                  ),
                   _infoTile('Class Teacher', 'Ms. Kavya Mehta', isDark),
                   _infoTile('Institute', institute, isDark),
-                  _infoTile('Medium of Instruction', 'English / Hindi (Bilingual)', isDark),
+                  _infoTile(
+                    'Medium of Instruction',
+                    'English / Hindi (Bilingual)',
+                    isDark,
+                  ),
                 ],
               ),
               const SizedBox(height: 30),
@@ -152,7 +170,9 @@ class StudentInformationScreen extends StatelessWidget {
         color: isDark ? AppTheme.darkSurface : Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2E8F0),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFFE2E8F0),
         ),
         boxShadow: [
           BoxShadow(

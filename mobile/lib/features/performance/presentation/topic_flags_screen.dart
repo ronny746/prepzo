@@ -84,7 +84,7 @@ class _TopicFlagsScreenState extends State<TopicFlagsScreen> {
             isParent
                 ? 'Review your child\'s progress and assigned remedies.'
                 : 'Flags are updated when a test is submitted.',
-            style: TextStyle(color: Colors.grey.shade700),
+            style: TextStyle(color: AppTheme.inkSoft(context)),
           ),
           if (isParent) ...[
             const SizedBox(height: 16),
@@ -118,7 +118,7 @@ class _TopicFlagsScreenState extends State<TopicFlagsScreen> {
                 return Center(
                   child: Text(
                     'Unable to load topic progress. Pull down to try again.',
-                    style: TextStyle(color: Colors.grey.shade700),
+                    style: TextStyle(color: AppTheme.inkSoft(context)),
                   ),
                 );
               }
@@ -129,7 +129,7 @@ class _TopicFlagsScreenState extends State<TopicFlagsScreen> {
                     isParent && _selectedChildId == null
                         ? 'Select a child to view progress.'
                         : 'Topic flags will appear after a submitted test.',
-                    style: TextStyle(color: Colors.grey.shade700),
+                    style: TextStyle(color: AppTheme.inkSoft(context)),
                     textAlign: TextAlign.center,
                   ),
                 );
@@ -166,7 +166,7 @@ class _TopicFlagsScreenState extends State<TopicFlagsScreen> {
                                 Text(
                                   flag['subjectName']?.toString() ?? 'Subject',
                                   style: TextStyle(
-                                    color: Colors.grey.shade700,
+                                    color: AppTheme.inkSoft(context),
                                     fontSize: 12,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -194,7 +194,7 @@ class _TopicFlagsScreenState extends State<TopicFlagsScreen> {
                             ),
                           ),
                           Text(
-                            '${flag['percentage'] ?? 0}%',
+                            '${(num.tryParse('${flag['percentage'] ?? 0}') ?? 0).round()}%',
                             style: TextStyle(
                               color: color,
                               fontSize: 22,

@@ -25,25 +25,27 @@ class AcademicTask {
   final num? marksObtained;
   final String? submissionStatus; // 'graded', 'submitted', 'pending'
 
-  factory AcademicTask.fromJson(Map<String, dynamic> json, String type, Map<String, String> subjectsMap, List<dynamic> submissions) {
+  factory AcademicTask.fromJson(
+    Map<String, dynamic> json,
+    String type,
+    Map<String, String> subjectsMap,
+    List<dynamic> submissions,
+  ) {
     final String id = json['_id'] ?? json['id'] ?? '';
-    final String subjectId = json['subjectId'] is Map 
-        ? (json['subjectId']['_id'] ?? json['subjectId']['id'] ?? '') 
+    final String subjectId = json['subjectId'] is Map
+        ? (json['subjectId']['_id'] ?? json['subjectId']['id'] ?? '')
         : (json['subjectId']?.toString() ?? '');
-    
-    final String subjectName = json['subjectId'] is Map 
-        ? (json['subjectId']['name'] ?? 'Unknown Subject') 
+
+    final String subjectName = json['subjectId'] is Map
+        ? (json['subjectId']['name'] ?? 'Unknown Subject')
         : (subjectsMap[subjectId] ?? 'Unknown Subject');
 
-    final submission = submissions.firstWhere(
-      (s) {
-        final aId = s['assignmentId'] is Map 
-            ? s['assignmentId']['_id'] 
-            : s['assignmentId'];
-        return aId == id;
-      },
-      orElse: () => null,
-    );
+    final submission = submissions.firstWhere((s) {
+      final aId = s['assignmentId'] is Map
+          ? s['assignmentId']['_id']
+          : s['assignmentId'];
+      return aId == id;
+    }, orElse: () => null);
 
     return AcademicTask(
       id: id,
@@ -51,7 +53,9 @@ class AcademicTask {
       title: json['title'] ?? 'Untitled',
       description: json['description'] ?? '',
       subjectName: subjectName,
-      dueDate: json['dueDate'] != null ? DateTime.tryParse(json['dueDate'].toString())?.toLocal() : null,
+      dueDate: json['dueDate'] != null
+          ? DateTime.tryParse(json['dueDate'].toString())?.toLocal()
+          : null,
       maxMarks: json['maxMarks'] ?? 100,
       attachments: List<String>.from(json['attachments'] ?? []),
       isSubmitted: submission != null,

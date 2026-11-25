@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:lms/core/theme/app_theme.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:lms/features/voice_assistant/voice_destinations.dart';
 
 /// A command assistant, deliberately separate from any future AI tutor.
 /// It only acts on explicit, local navigation requests and never sends audio
@@ -89,25 +90,7 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> {
   }
 
   Future<void> _runCommand(String words) async {
-    final command = words.toLowerCase();
-    final destinations = <String, int>{
-      'home': 0,
-      'dashboard': 0,
-      'practice': 1,
-      'test': 1,
-      'study': 2,
-      'material': 2,
-      'progress': 3,
-      'result': 3,
-      'profile': 4,
-      'schedule': 5,
-      'timetable': 5,
-      'attendance': 11,
-      'fee': 10,
-    };
-    final match = destinations.entries
-        .where((entry) => command.contains(entry.key))
-        .firstOrNull;
+    final match = matchVoiceDestination(words);
     if (match == null) {
       if (mounted) {
         setState(
@@ -120,14 +103,19 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> {
       );
       return;
     }
-    widget.onNavigate(match.value);
+    final dest = match.value;
+    // Capture before the sheet is popped; routes are pushed after the pop.
+    final navigator = Navigator.of(context);
+    if (dest.tabIndex != null) widget.onNavigate(dest.tabIndex!);
     final response = 'Opening ${match.key}.';
     if (mounted) {
       setState(() => _message = response);
     }
     await _tts.speak(response);
     if (mounted) {
-      Navigator.of(context).pop();
+      navigator.pop();
+      final route = dest.routeName;
+      if (route != null) navigator.pushNamed(route);
     }
   }
 
@@ -148,9 +136,9 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> {
             ),
           ),
           const SizedBox(height: 18),
-          const Icon(
+          Icon(
             Icons.record_voice_over_rounded,
-            color: AppTheme.primary,
+            color: AppTheme.ink(context),
             size: 34,
           ),
           const SizedBox(height: 10),
@@ -184,10 +172,10 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> {
             ),
           ),
           const SizedBox(height: 14),
-          const Text(
+          Text(
             'Try: “Open practice”, “Show timetable”, or “Open attendance”.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+            style: TextStyle(fontSize: 12, color: AppTheme.inkSoft(context)),
           ),
         ],
       ),

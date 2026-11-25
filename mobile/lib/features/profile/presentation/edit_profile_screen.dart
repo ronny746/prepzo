@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lms/core/theme/app_theme.dart';
+import 'package:lms/l10n/app_localizations.dart';
+import 'package:lms/core/data/india_locations.dart';
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:lms/features/profile/data/models/profile_details.dart';
 import 'package:lms/features/profile/data/repositories/profile_repository.dart';
@@ -41,8 +43,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.initState();
     final profile = widget.initialProfile;
     final nameParts = (profile?.name ?? '').trim().split(' ');
-    final first = profile?.firstName ?? (nameParts.isNotEmpty ? nameParts.first : '');
-    final last = profile?.lastName ?? (nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '');
+    final first =
+        profile?.firstName ?? (nameParts.isNotEmpty ? nameParts.first : '');
+    final last =
+        profile?.lastName ??
+        (nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '');
 
     _firstNameController = TextEditingController(text: first);
     _lastNameController = TextEditingController(text: last);
@@ -52,7 +57,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _cityController = TextEditingController(text: profile?.city ?? '');
     _stateController = TextEditingController(text: profile?.state ?? '');
     _addressController = TextEditingController(text: profile?.address ?? '');
-    
+
     if (profile?.gender != null && profile!.gender.isNotEmpty) {
       final g = profile.gender.toLowerCase();
       if (g.contains('female')) {
@@ -139,94 +144,118 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           child: Container(
             padding: const EdgeInsets.all(24),
             child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Profile Photo',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Profile Photo',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    icon: const PhosphorIcon(PhosphorIcons.x, size: 20),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Option 1: Take Photo from Camera
-              Material(
-                color: Colors.transparent,
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  leading: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
+                    IconButton(
+                      icon: const PhosphorIcon(PhosphorIcons.x, size: 20),
+                      onPressed: () => Navigator.pop(ctx),
                     ),
-                    child: const PhosphorIcon(PhosphorIcons.camera, color: AppTheme.primary, size: 22),
-                  ),
-                  title: const Text(
-                    'Take Photo from Camera',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                  ),
-                  subtitle: const Text(
-                    'Capture a new picture using device camera',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                  ),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickImage(ImageSource.camera);
-                  },
+                  ],
                 ),
-              ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 16),
 
-              // Option 2: Select Photo from Gallery
-              Material(
-                color: Colors.transparent,
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  leading: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
+                // Option 1: Take Photo from Camera
+                Material(
+                  color: Colors.transparent,
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
                     ),
-                    child: const PhosphorIcon(PhosphorIcons.image, color: Color(0xFF4F46E5), size: 22),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    leading: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const PhosphorIcon(
+                        PhosphorIcons.camera,
+                        color: AppTheme.primary,
+                        size: 22,
+                      ),
+                    ),
+                    title: const Text(
+                      'Take Photo from Camera',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Capture a new picture using device camera',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _pickImage(ImageSource.camera);
+                    },
                   ),
-                  title: const Text(
-                    'Select Photo from Gallery',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                  ),
-                  subtitle: const Text(
-                    'Choose an existing photo from photo library',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                  ),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickImage(ImageSource.gallery);
-                  },
                 ),
-              ),
-              const SizedBox(height: 16),
-            ],
+                const SizedBox(height: 8),
+
+                // Option 2: Select Photo from Gallery
+                Material(
+                  color: Colors.transparent,
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    leading: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const PhosphorIcon(
+                        PhosphorIcons.image,
+                        color: Color(0xFF4F46E5),
+                        size: 22,
+                      ),
+                    ),
+                    title: const Text(
+                      'Select Photo from Gallery',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Choose an existing photo from photo library',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _pickImage(ImageSource.gallery);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+    );
+  }
 
   Future<void> _handleSave() async {
     if (!_formKey.currentState!.validate()) return;
@@ -236,6 +265,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     try {
       final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
       String? finalAvatarUrl = _avatarUrl;
+      var avatarUploadFailed = false;
 
       // If user selected a local file, upload it to the backend first
       if (_localImageFile != null && _localImageFile!.existsSync()) {
@@ -246,6 +276,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         );
         if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
           finalAvatarUrl = uploadedUrl;
+        } else {
+          // Keep saving the other fields; warn about the avatar afterwards.
+          avatarUploadFailed = true;
         }
       }
 
@@ -264,23 +297,52 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           avatarUrl: finalAvatarUrl,
         );
 
-        if (mounted) {
-          context.read<AuthBloc>().add(const AuthStarted());
+        if (!mounted) return;
+        // Cubit reports API failure via state; show it instead of fake success.
+        final result = context.read<ProfileCubit>().state;
+        if (result.status == ProfileStatus.failure) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Profile updated successfully!'),
-              backgroundColor: AppTheme.success,
-              behavior: SnackBarBehavior.floating,
+            SnackBar(
+              content: Text(
+                result.errorMessage ??
+                    AppLocalizations.of(context)!.profileUpdateFailed,
+              ),
+              backgroundColor: AppTheme.error,
             ),
           );
-          Navigator.pop(context, true);
+          return;
+        }
+
+        if (mounted) {
+          context.read<AuthBloc>().add(const AuthStarted());
+          await context.read<ProfileCubit>().loadProfile(token);
+          if (mounted) {
+            if (avatarUploadFailed) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    AppLocalizations.of(context)!.profileAvatarUploadFailed,
+                  ),
+                  backgroundColor: AppTheme.error,
+                ),
+              );
+            }
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Profile updated successfully!'),
+                backgroundColor: AppTheme.success,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+            Navigator.pop(context, true);
+          }
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to update profile: ${e.toString()}'),
+            content: Text(AppLocalizations.of(context)!.profileUpdateFailed),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -312,7 +374,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final avatarImageProvider = _getAvatarImage();
 
     return Scaffold(
-      backgroundColor: isDark ? AppTheme.darkBackground : const Color(0xFFF8FAFC),
+      backgroundColor: isDark
+          ? AppTheme.darkBackground
+          : const Color(0xFFF8FAFC),
       appBar: AppBar(
         leading: IconButton(
           icon: const PhosphorIcon(PhosphorIcons.arrowLeft, size: 20),
@@ -353,7 +417,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           backgroundColor: Colors.white24,
                           backgroundImage: avatarImageProvider,
                           child: avatarImageProvider == null
-                              ? const PhosphorIcon(PhosphorIcons.user, size: 48, color: Colors.white)
+                              ? const PhosphorIcon(
+                                  PhosphorIcons.user,
+                                  size: 48,
+                                  color: Colors.white,
+                                )
                               : null,
                         ),
                       ),
@@ -366,7 +434,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           customBorder: const CircleBorder(),
                           child: Container(
                             padding: const EdgeInsets.all(8),
-                            child: const PhosphorIcon(PhosphorIcons.camera, color: Colors.white, size: 18),
+                            child: const PhosphorIcon(
+                              PhosphorIcons.camera,
+                              color: Colors.white,
+                              size: 18,
+                            ),
                           ),
                         ),
                       ),
@@ -396,9 +468,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             controller: _firstNameController,
                             decoration: const InputDecoration(
                               labelText: 'First Name',
-                              prefixIcon: PhosphorIcon(PhosphorIcons.user, size: 18),
+                              prefixIcon: PhosphorIcon(
+                                PhosphorIcons.user,
+                                size: 18,
+                              ),
                             ),
-                            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                            validator: (v) => v == null || v.trim().isEmpty
+                                ? 'Required'
+                                : null,
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -407,7 +484,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             controller: _lastNameController,
                             decoration: const InputDecoration(
                               labelText: 'Last Name',
-                              prefixIcon: PhosphorIcon(PhosphorIcons.user, size: 18),
+                              prefixIcon: PhosphorIcon(
+                                PhosphorIcons.user,
+                                size: 18,
+                              ),
                             ),
                           ),
                         ),
@@ -416,15 +496,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const SizedBox(height: 14),
                     TextFormField(
                       controller: _emailController,
-                      readOnly: true,
-                      enabled: false,
                       keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
-                        labelText: 'Email Address (Read-only)',
-                        prefixIcon: PhosphorIcon(PhosphorIcons.envelope, size: 18),
-                        suffixIcon: PhosphorIcon(PhosphorIcons.lockKey, size: 18, color: Colors.grey),
-                        helperText: 'Email address cannot be modified',
+                        labelText: 'Email Address',
+                        prefixIcon: PhosphorIcon(
+                          PhosphorIcons.envelope,
+                          size: 18,
+                        ),
+                        helperText: 'Your registered email address',
                       ),
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return 'Email address is required';
+                        }
+                        final emailRegex = RegExp(
+                          r'^[\w\.-]+@([\w-]+\.)+[\w-]{2,4}$',
+                        );
+                        if (!emailRegex.hasMatch(val.trim())) {
+                          return 'Please enter a valid email address';
+                        }
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 14),
                     TextFormField(
@@ -433,9 +525,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Mobile Number',
                         prefixIcon: PhosphorIcon(PhosphorIcons.phone, size: 18),
-                        helperText: 'Note: Changing this will require you to log in with the new number next time.',
+                        helperText:
+                            'Note: Changing this will require you to log in with the new number next time.',
                         helperMaxLines: 2,
-                        helperStyle: TextStyle(color: Color(0xFFEA580C), fontSize: 11, fontWeight: FontWeight.w600),
+                        helperStyle: TextStyle(
+                          color: Color(0xFFEA580C),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -443,7 +540,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       controller: _classController,
                       decoration: const InputDecoration(
                         labelText: 'Class',
-                        prefixIcon: PhosphorIcon(PhosphorIcons.chalkboard, size: 18),
+                        prefixIcon: PhosphorIcon(
+                          PhosphorIcons.chalkboard,
+                          size: 18,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -451,7 +551,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       initialValue: _gender,
                       decoration: const InputDecoration(
                         labelText: 'Gender',
-                        prefixIcon: PhosphorIcon(PhosphorIcons.genderIntersex, size: 18),
+                        prefixIcon: PhosphorIcon(
+                          PhosphorIcons.genderIntersex,
+                          size: 18,
+                        ),
                       ),
                       items: ['Male', 'Female', 'Other'].map((g) {
                         return DropdownMenuItem(value: g, child: Text(g));
@@ -473,22 +576,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: TextFormField(
-                            controller: _cityController,
-                            decoration: const InputDecoration(
-                              labelText: 'City',
-                              prefixIcon: PhosphorIcon(PhosphorIcons.buildings, size: 18),
-                            ),
+                          child: _buildLocationDropdown(
+                            label: 'State',
+                            value: _stateController.text,
+                            items: indiaStates,
+                            onChanged: (value) => setState(() {
+                              _stateController.text = value ?? '';
+                              _cityController.clear();
+                            }),
+                            icon: PhosphorIcons.mapTrifold,
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: TextFormField(
-                            controller: _stateController,
-                            decoration: const InputDecoration(
-                              labelText: 'State',
-                              prefixIcon: PhosphorIcon(PhosphorIcons.mapTrifold, size: 18),
+                          child: _buildLocationDropdown(
+                            label: 'City',
+                            value: _cityController.text,
+                            items: citiesForState(_stateController.text),
+                            onChanged: (value) => setState(
+                              () => _cityController.text = value ?? '',
                             ),
+                            icon: PhosphorIcons.buildings,
                           ),
                         ),
                       ],
@@ -499,7 +607,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       maxLines: 2,
                       decoration: const InputDecoration(
                         labelText: 'Full Address',
-                        prefixIcon: PhosphorIcon(PhosphorIcons.mapPin, size: 18),
+                        prefixIcon: PhosphorIcon(
+                          PhosphorIcons.mapPin,
+                          size: 18,
+                        ),
                       ),
                     ),
                   ],
@@ -515,21 +626,32 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       backgroundColor: AppTheme.primary,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                       elevation: 0,
                     ),
                     child: _isSaving
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
                           )
                         : const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               PhosphorIcon(PhosphorIcons.floppyDisk, size: 20),
                               SizedBox(width: 8),
-                              Text('Save Profile Changes', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              Text(
+                                'Save Profile Changes',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
                             ],
                           ),
                   ),
@@ -539,6 +661,34 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLocationDropdown({
+    required String label,
+    required String value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+    required IconData icon,
+  }) {
+    final selected = items.contains(value) ? value : null;
+    return DropdownButtonFormField<String>(
+      initialValue: selected,
+      isExpanded: true,
+      hint: Text('Select $label'.toLowerCase()),
+      items: items
+          .map(
+            (item) => DropdownMenuItem(
+              value: item,
+              child: Text(item, overflow: TextOverflow.ellipsis),
+            ),
+          )
+          .toList(),
+      onChanged: items.isEmpty ? null : onChanged,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: PhosphorIcon(icon, size: 18),
       ),
     );
   }
@@ -556,7 +706,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         color: isDark ? AppTheme.darkSurface : Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2E8F0),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFFE2E8F0),
         ),
         boxShadow: [
           BoxShadow(

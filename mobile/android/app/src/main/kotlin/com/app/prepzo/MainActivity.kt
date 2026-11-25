@@ -1,7 +1,9 @@
 package com.app.prepzo
 
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
@@ -33,8 +35,37 @@ class MainActivity : FlutterActivity() {
     private fun linkFrom(intent: Intent?): String? =
         if (intent?.action == Intent.ACTION_VIEW) intent.dataString else null
 
+    // Last time (epoch ms) the phone was seen ringing or on a call.
+    @Volatile
+    private var lastCallAt = 0L
+    private var modeListener: AudioManager.OnModeChangedListener? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        val audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+        // Android 12+: get told about calls even while the exam is in the
+        // background, so a call that already ended is still known on return.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val listener = AudioManager.OnModeChangedListener { mode ->
+                if (isCallMode(mode)) lastCallAt = System.currentTimeMillis()
+            }
+            audio.addOnModeChangedListener(mainExecutor, listener)
+            modeListener = listener
+        }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "prepzo/call_state")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "wasInCallSince" -> {
+                        val since = call.argument<Number>("sinceMillis")?.toLong() ?: 0L
+                        val inCallNow = isCallMode(audio.mode)
+                        if (inCallNow) lastCallAt = System.currentTimeMillis()
+                        result.success(inCallNow || (lastCallAt > 0L && lastCallAt >= since))
+                    }
+                    else -> result.notImplemented()
+                }
+            }
         registerFilesChannel(flutterEngine)
         registerLinksChannel(flutterEngine)
     }
@@ -176,4 +207,23 @@ class MainActivity : FlutterActivity() {
             }
         }
     }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            modeListener?.let {
+                (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+                    .removeOnModeChangedListener(it)
+            }
+        }
+        modeListener = null
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    // Ringing, a phone call, or a VoIP call (WhatsApp, Meet, ...).
+    private fun isCallMode(mode: Int): Boolean =
+        mode == AudioManager.MODE_RINGTONE ||
+            mode == AudioManager.MODE_IN_CALL ||
+            mode == AudioManager.MODE_IN_COMMUNICATION ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                mode == AudioManager.MODE_CALL_SCREENING)
 }

@@ -1,18 +1,20 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:lms/core/constants/exam_strings.dart';
-import 'package:lms/core/utils/numeric_answer_formatter.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lms/core/theme/app_theme.dart';
 import 'package:lms/core/config/app_config.dart';
+import 'package:lms/core/services/call_state_service.dart';
+import 'package:lms/features/exams/data/answer_payload.dart';
 import 'package:lms/features/exams/data/models/exams_models.dart';
 import 'package:lms/features/exams/data/repositories/exams_repository.dart';
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:camera/camera.dart';
 import 'package:lms/core/widgets/math_html_renderer.dart';
+import 'package:lms/core/utils/question_html.dart';
 import 'package:lms/features/exams/presentation/screens/dpp_practice_player_screen.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:lms/routes/app_router.dart';
 
 class ExamPlayerScreen extends StatefulWidget {
   const ExamPlayerScreen({super.key, required this.exam});
@@ -22,147 +24,201 @@ class ExamPlayerScreen extends StatefulWidget {
   State<ExamPlayerScreen> createState() => _ExamPlayerScreenState();
 }
 
+/// Dark status-bar icons on the light exam screens (white icons vanished on
+/// the cream background).
+const SystemUiOverlayStyle _examSystemUi = SystemUiOverlayStyle(
+  statusBarColor: Colors.transparent,
+  statusBarIconBrightness: Brightness.dark,
+  statusBarBrightness: Brightness.light,
+  systemNavigationBarColor: Colors.white,
+  systemNavigationBarIconBrightness: Brightness.dark,
+);
+
 class _ExamPlayerScreenState extends State<ExamPlayerScreen>
     with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _currentQuestionIndex = 0;
+  final Set<int> _visitedQuestions = {0};
   final Map<int, String> _answers = {};
   final Set<int> _markedForReview = {};
   final Set<int> _lockedPracticeAnswers = {};
   final Map<int, Map<String, dynamic>> _practiceFeedback = {};
   bool _isSubmitting = false;
+  // One controller per question so typed text never carries over (E4).
+  final Map<int, TextEditingController> _textControllers = {};
+  // One pending debounced save per question; flushed on dispose.
+  final PendingAnswerSaves _pendingTextSaves = PendingAnswerSaves();
   Timer? _timer;
+  Timer? _questionTimer;
   int _remainingSeconds = 0;
+  // Wall-clock end of the test. The countdown is worked out from this so it
+  // stays right after the app was in the background (Dart timers pause there).
+  DateTime? _endsAt;
+  final Map<String, int> _timeSpentPerQuestion = {};
 
   List<dynamic> _questions = [];
   bool _isLoading = true;
+  String? _errorMessage;
 
   CameraController? _cameraController;
   Timer? _snapshotTimer;
   int _violationsCount = 0;
   bool _enableProctoring = false;
   int? _maxTabSwitchesAllowed;
+  // True while the camera permission pop-up / camera start is up: the app
+  // going inactive/paused for its own pop-up is never a warning.
+  bool _permissionRequestInFlight = false;
+  // The warning dialog currently shown, updated in place for a new warning.
+  final ValueNotifier<String?> _warningText = ValueNotifier<String?>(null);
+  bool _warningDialogOpen = false;
+  bool _limitDialogOpen = false;
+  // Draggable camera preview position (offset from the bottom-right corner).
+  Offset _cameraOffset = const Offset(12, 12);
 
-  // True only while the clock is running on a live attempt; leaves before the
-  // student pressed Start (or after submit) must never count as violations.
-  bool _examLive = false;
-  bool _autoSubmittedForLeaves = false;
-  // True while the app itself asks for a permission: the OS permission dialog
-  // pauses the activity, which must not be mistaken for the student leaving.
-  bool _requestingPermission = false;
-  // Set when a leave was counted; the warning dialog is shown on return.
-  bool _pendingLeaveWarning = false;
-  // Questions the student has opened, to tell "Not visited" from "Not answered".
-  final Set<int> _visited = {};
-  // One controller per typed-answer question so the text survives navigation.
-  final Map<int, TextEditingController> _typedControllers = {};
+  // When the student left the app (null while in the app).
+  DateTime? _leftAt;
+  // Set if a phone/VoIP call was seen while the student was away.
+  bool _leftForCall = false;
+  // Coming back this fast is treated as an accidental swipe, not a warning.
+  static const Duration _leaveGrace = Duration(seconds: 2);
 
-  bool get _isDpp {
-    final title = widget.exam.title.trimLeft().toUpperCase();
-    return title.startsWith('DPP');
-  }
+  // Why: every launch site (student_exams_screen, dashboard) passes exams from
+  // /exams/student/my-exams, never a DPP/practice session; those open
+  // DppPracticePlayerScreen directly. A title like "DPP - x" is just a name.
+  bool get _isPractice => widget.exam.id.startsWith('custom-');
 
-  bool get _isPractice {
-    final title = widget.exam.title.trimLeft().toUpperCase();
-    return title.startsWith('PRACTICE') || widget.exam.id.startsWith('custom-');
-  }
-
-  bool get _isPracticeOrDpp => _isDpp || _isPractice;
+  bool get _isPracticeOrDpp => _isPractice;
 
   bool get _isRemotePracticeSession =>
       _isPracticeOrDpp && !widget.exam.id.startsWith('custom-');
 
-  bool get _isInteractivePractice => _isPractice && !_isDpp;
+  bool get _isInteractivePractice => _isPractice;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Real timed tests show the rules and ask for the camera BEFORE the attempt
-    // is created server-side and the clock starts. Practice/DPP and
-    // already-submitted (review) attempts keep the old direct path.
-    if (_isPracticeOrDpp || widget.exam.submissionStatus == 'SUBMITTED') {
-      _startExam();
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _showStartGate());
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showInstructions());
   }
 
-  /// Shows the instructions dialog, then requests camera permission, then
-  /// starts the exam. Cancel leaves the screen without creating an attempt.
-  Future<void> _showStartGate() async {
+  /// Loads the test rules without starting the clock, explains them, asks
+  /// for the camera, and only then starts the test on the server, so the
+  /// permission pop-up never eats exam time or counts as a warning.
+  Future<void> _showInstructions() async {
     if (!mounted) return;
-    final total = widget.exam.totalQuestions ?? widget.exam.questions.length;
-    final proceed = await showDialog<bool>(
+    await _loadRules();
+    if (!mounted) return;
+    final max = _maxTabSwitchesAllowed;
+    final resuming =
+        _alreadyStarted || widget.exam.submissionStatus == 'IN_PROGRESS';
+    final rules = <String>[
+      if (resuming)
+        'You started this test earlier. Your timer has kept running since then; your saved answers are kept.'
+      else
+        'Your timer starts only after you tap Start test.',
+      if (max != null && max > 0)
+        'Leaving the test (pressing Home, opening another app or locking the phone) counts as a warning. You will see a message each time. If you leave the test $max ${max == 1 ? 'time' : 'times'}, it is submitted automatically.'
+      else
+        'Leaving the test (pressing Home or opening another app) is recorded as a warning. You will see a message each time.',
+      'Pulling down the notification bar, a phone call and this app\'s own pop-ups (like the camera permission) do not count. The timer keeps running during a call.',
+      if (_enableProctoring)
+        'This test uses your front camera. Please allow camera access when asked.',
+    ];
+    final start = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => PopScope(
-        canPop: false,
+      builder: (ctx) => Theme(
+        data: AppTheme.lightTheme,
         child: AlertDialog(
-          title: const Text(ExamStrings.startTitle),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                ExamStrings.fill(ExamStrings.startDuration, {
-                  'minutes': widget.exam.durationMinutes,
-                }),
-              ),
-              if (total > 0)
+          title: Text(widget.exam.title),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  ExamStrings.fill(ExamStrings.startQuestions, {
-                    'count': total,
-                  }),
+                  resuming ? 'Before you continue' : 'Before you start',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-              const SizedBox(height: 12),
-              Text(
-                ExamStrings.fill(ExamStrings.startRuleLeave, {
-                  'max':
-                      widget.exam.maxTabSwitchesAllowed ??
-                      ExamStrings.defaultMaxLeaves,
-                }),
-              ),
-              const SizedBox(height: 12),
-              const Text(ExamStrings.startCameraReason),
-            ],
+                const SizedBox(height: 8),
+                for (final rule in rules)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('•  '),
+                        Expanded(child: Text(rule)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text(ExamStrings.cancelButton),
+              child: const Text('Go back'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(ExamStrings.startButton),
+              child: Text(resuming ? 'Resume test' : 'Start test'),
             ),
           ],
         ),
       ),
     );
-    if (!mounted) return;
-    if (proceed != true) {
-      Navigator.of(context).pop();
+    if (start != true) {
+      if (mounted) Navigator.of(context).maybePop();
       return;
     }
-    await _runWithoutLeaveTracking(() => Permission.camera.request());
-    if (!mounted) return;
-    await _startExam();
+    if (_enableProctoring && _cameraController == null) {
+      await _initializeCameraGuarded();
+    }
+    if (mounted) _startExam();
   }
 
-  /// Runs [action] (a permission request) while lifecycle events are ignored.
-  /// The short tail delay covers the paused/resumed events that the OS
-  /// delivers just after the permission dialog closes.
-  Future<void> _runWithoutLeaveTracking(Future<void> Function() action) async {
-    _requestingPermission = true;
+  /// Reads proctoring and the warning limit before the test starts, without
+  /// starting the clock. On a server without the rules endpoint the generic
+  /// rules are shown and the camera is started after the start call (still
+  /// before the timer).
+  // The student opened this test before; its clock is already running.
+  bool _alreadyStarted = false;
+
+  Future<void> _loadRules() async {
+    if (_isPracticeOrDpp) return;
+    final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
+    final repo = context.read<ExamsRepository>();
     try {
-      await action();
+      final data = await repo.getExamRules(token, widget.exam.id);
+      final security = data['security'] is Map
+          ? Map<String, dynamic>.from(data['security'])
+          : <String, dynamic>{};
+      _enableProctoring = security['enableProctoring'] == true;
+      _maxTabSwitchesAllowed = int.tryParse(
+        security['maxTabSwitchesAllowed']?.toString() ?? '',
+      );
+      _alreadyStarted =
+          data['started'] == true ||
+          data['submissionStatus']?.toString() == 'IN_PROGRESS';
     } catch (e) {
-      debugPrint('Permission request error: $e');
+      // Errors (access, already submitted) are shown by _startExam.
+      debugPrint('Could not load test rules: $e');
+    }
+  }
+
+  /// Starts the camera with lifecycle changes ignored, so the permission
+  /// pop-up is never counted as leaving the test.
+  Future<void> _initializeCameraGuarded() async {
+    _permissionRequestInFlight = true;
+    try {
+      await _initializeCamera();
     } finally {
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      _requestingPermission = false;
+      // The pop-up's "resumed" can arrive a moment after the call returns.
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      _permissionRequestInFlight = false;
+      _leftAt = null;
     }
   }
 
@@ -170,80 +226,225 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
+    _questionTimer?.cancel();
     _snapshotTimer?.cancel();
-    _cameraController?.dispose();
-    for (final c in _typedControllers.values) {
+    _pendingTextSaves.flushAll();
+    for (final c in _textControllers.values) {
       c.dispose();
     }
+    _cameraController?.dispose();
+    _warningText.dispose();
     super.dispose();
   }
 
+  /// A proctored test is on screen: started, not loading, not submitting.
+  bool get _isTestInProgress =>
+      mounted &&
+      !_isPracticeOrDpp &&
+      !_isLoading &&
+      !_isSubmitting &&
+      _questions.isNotEmpty &&
+      _endsAt != null;
+
+  // Why: `inactive` alone fires for an incoming-call banner, the notification
+  // shade, Control Center and system dialogs, so it never counts. Only really
+  // leaving (hidden/paused) starts a "left the test" period, and it is judged
+  // on return: a call during it is not a warning, and the test is never
+  // auto-submitted while the student is still on the call.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!_examLive || _requestingPermission || _isSubmitting) return;
-    // Only `paused` means the app really went to the background. `inactive`
-    // also fires for the notification shade, system dialogs and incoming-call
-    // banners, which are not the student leaving the test.
-    if (state == AppLifecycleState.paused) {
-      _logViolation('TAB_SWITCH');
-    } else if (state == AppLifecycleState.resumed && _pendingLeaveWarning) {
-      _pendingLeaveWarning = false;
+    // The app's own camera permission pop-up is not leaving the test.
+    if (_permissionRequestInFlight) return;
+    switch (state) {
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        if (_leftAt == null && _isTestInProgress) {
+          final leftAt = DateTime.now();
+          _leftAt = leftAt;
+          _leftForCall = false;
+          _checkForCall(leftAt);
+        }
+        break;
+      case AppLifecycleState.resumed:
+        _onReturnedToTest();
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        break;
+    }
+  }
+
+  // Ask right away (the call screen is up while it rings) and once more a
+  // moment later, in case the call UI took a second to come up.
+  Future<void> _checkForCall(DateTime leftAt) async {
+    if (await CallStateService.wasInCallSince(leftAt)) {
+      if (_leftAt == leftAt) _leftForCall = true;
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    if (_leftAt != leftAt) return;
+    if (await CallStateService.wasInCallSince(leftAt) && _leftAt == leftAt) {
+      _leftForCall = true;
+    }
+  }
+
+  Future<void> _onReturnedToTest() async {
+    final leftAt = _leftAt;
+    _leftAt = null;
+    _syncRemainingTime();
+    if (leftAt == null || !_isTestInProgress) return;
+
+    final wasCall =
+        _leftForCall || await CallStateService.wasInCallSince(leftAt);
+    _leftForCall = false;
+    if (!mounted || !_isTestInProgress) return;
+
+    if (wasCall) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Welcome back. The call was not counted as leaving the test. The timer kept running.',
+          ),
+          duration: Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    if (DateTime.now().difference(leftAt) < _leaveGrace) return;
+    _logViolation('TAB_SWITCH');
+  }
+
+  /// Records the warning count on the server straight away, so closing and
+  /// reopening the app can't wipe it (the server keeps the higher count).
+  Future<void> _reportViolations() async {
+    final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
+    final repo = context.read<ExamsRepository>();
+    try {
+      await repo.saveAnswer(token, widget.exam.id, {
+        'violations': {'tabSwitches': _violationsCount},
+      });
+    } catch (e) {
+      debugPrint('Could not record warning: $e'); // sent again at submit
+    }
+  }
+
+  void _logViolation(String type) {
+    if (!mounted) return;
+    setState(() {
+      _violationsCount++;
+    });
+    _reportViolations();
+    if (_enableProctoring) {
+      _captureAndUploadSnapshot(type: type);
+    }
+    final max = _maxTabSwitchesAllowed;
+    if (max != null && max > 0 && _violationsCount >= max) {
+      _submitAfterLimit(max);
+    } else {
       _showLeaveWarning();
     }
   }
 
-  /// Tells the student, on return, how many leaves are counted so far.
-  Future<void> _showLeaveWarning() async {
-    if (!mounted || _isSubmitting) return;
-    final max = _maxTabSwitchesAllowed ?? 0;
-    final hasLimit = max > 0;
-    final isFinal = hasLimit && _violationsCount >= max - 1;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.warning_amber_rounded, color: AppTheme.error),
-        title: Text(
-          hasLimit
-              ? ExamStrings.fill(ExamStrings.warningTitle, {
-                  'n': _violationsCount,
-                  'max': max,
-                })
-              : ExamStrings.fill(ExamStrings.warningTitleUnlimited, {
-                  'n': _violationsCount,
-                }),
-        ),
-        content: Text(
-          !hasLimit
-              ? ExamStrings.warningUnlimitedBody
-              : (isFinal
-                    ? ExamStrings.warningFinalBody
-                    : ExamStrings.warningBody),
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text(ExamStrings.warningOk),
-          ),
-        ],
-      ),
-    );
+  /// Message for a counted leave that did not reach the limit.
+  String _warningMessage() {
+    final max = _maxTabSwitchesAllowed;
+    final n = _violationsCount;
+    if (max == null || max <= 0) {
+      return 'Warning $n: you left the test. Please stay in the test until you submit.';
+    }
+    final left = max - n;
+    return left <= 1
+        ? 'Warning $n of $max. You left the test. If you leave the test again it will be submitted.'
+        : 'Warning $n of $max. You left the test. If you leave the test $left more times it will be submitted.';
   }
 
-  void _logViolation(String type) {
-    setState(() {
-      _violationsCount++;
-    });
-    _pendingLeaveWarning = true;
-    if (_enableProctoring) {
-      _captureAndUploadSnapshot(type: type);
+  /// One dialog on return; a further warning updates the open dialog.
+  Future<void> _showLeaveWarning() async {
+    _warningText.value = _warningMessage();
+    if (_warningDialogOpen || !mounted) return;
+    _warningDialogOpen = true;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Theme(
+        data: AppTheme.lightTheme,
+        child: AlertDialog(
+          icon: const Icon(
+            Icons.warning_amber_rounded,
+            color: AppTheme.error,
+            size: 36,
+          ),
+          title: const Text('You left the test'),
+          content: ValueListenableBuilder<String?>(
+            valueListenable: _warningText,
+            builder: (_, text, __) => Text(text ?? ''),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Continue test'),
+            ),
+          ],
+        ),
+      ),
+    );
+    _warningDialogOpen = false;
+  }
+
+  /// The limit is reached: say so clearly, then submit.
+  Future<void> _submitAfterLimit(int max) async {
+    if (!mounted) return;
+    _closeWarningDialog();
+    _limitDialogOpen = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Theme(
+        data: AppTheme.lightTheme,
+        child: PopScope(
+          canPop: false,
+          child: AlertDialog(
+            icon: const Icon(
+              Icons.assignment_turned_in_rounded,
+              color: AppTheme.error,
+              size: 36,
+            ),
+            title: Text('Warning $max of $max'),
+            content: Text(
+              'You left the test $max ${max == 1 ? 'time' : 'times'}, which is the limit for this test. Your test is being submitted now with the answers you saved.',
+            ),
+            actions: const [
+              Padding(
+                padding: EdgeInsets.all(8),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).whenComplete(() => _limitDialogOpen = false);
+    await _submitExam();
+  }
+
+  void _closeWarningDialog() {
+    if (_warningDialogOpen && mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      _warningDialogOpen = false;
     }
-    if (_maxTabSwitchesAllowed != null &&
-        _maxTabSwitchesAllowed! > 0 &&
-        _violationsCount >= _maxTabSwitchesAllowed!) {
-      // The student is being submitted, so there is no one to warn on return.
-      _pendingLeaveWarning = false;
-      _autoSubmittedForLeaves = true;
-      _submitExam();
+  }
+
+  /// Closes our own dialogs before leaving the screen, so a pop never
+  /// closes a dialog instead of the test.
+  void _closeOwnDialogs() {
+    _closeWarningDialog();
+    if (_limitDialogOpen && mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      _limitDialogOpen = false;
     }
   }
 
@@ -256,16 +457,47 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
     _remainingSeconds = (durationMinutes * 60 - elapsedSeconds)
         .clamp(0, durationMinutes * 60)
         .toInt();
+    _endsAt = DateTime.now().add(Duration(seconds: _remainingSeconds));
     if (_remainingSeconds == 0) {
       _submitExam();
       return;
     }
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_remainingSeconds > 0) {
-        setState(() => _remainingSeconds--);
-      } else {
-        timer.cancel();
-        _submitExam();
+    _timer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _syncRemainingTime(),
+    );
+  }
+
+  /// Recomputes the countdown from [_endsAt]; submits once time is up.
+  void _syncRemainingTime() {
+    final endsAt = _endsAt;
+    if (endsAt == null || !mounted) return;
+    final left = endsAt.difference(DateTime.now()).inSeconds.clamp(0, 1 << 31);
+    if (left != _remainingSeconds) setState(() => _remainingSeconds = left);
+    if (left == 0) {
+      _timer?.cancel();
+      _submitExam();
+    }
+  }
+
+  String _questionIdFor(Map question) {
+    final raw = question['questionId'] ?? question['_id'] ?? question['id'];
+    if (raw is Map) {
+      return (raw['_id'] ?? raw['id'] ?? raw[r'\$oid'] ?? '').toString();
+    }
+    return raw?.toString() ?? '';
+  }
+
+  void _startQuestionTimer() {
+    _questionTimer?.cancel();
+    _questionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || _isLoading || _questions.isEmpty || _isSubmitting) return;
+      final id = _questionIdFor(_questions[_currentQuestionIndex]);
+      if (id.isNotEmpty) {
+        setState(
+          () =>
+              _timeSpentPerQuestion[id] = (_timeSpentPerQuestion[id] ?? 0) + 1,
+        );
       }
     });
   }
@@ -374,6 +606,7 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
               _questions = questions;
               _isLoading = false;
             });
+            _startQuestionTimer();
 
             for (var i = 0; i < _questions.length; i++) {
               final qId =
@@ -388,12 +621,6 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
               if (savedAns != null) {
                 if (savedAns['selectedOptionId'] != null) {
                   _answers[i] = savedAns['selectedOptionId'].toString();
-                } else if ((savedAns['subjectiveAnswerText'] ?? '')
-                    .toString()
-                    .isNotEmpty) {
-                  _answers[i] = savedAns['subjectiveAnswerText'].toString();
-                }
-                if (savedAns['selectedOptionId'] != null) {
                   if (_isInteractivePractice) {
                     _lockedPracticeAnswers.add(i);
                     _practiceFeedback[i] = {
@@ -419,6 +646,7 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
           _questions = widget.exam.questions;
           _isLoading = false;
         });
+        _startQuestionTimer();
         return;
       }
 
@@ -426,6 +654,15 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
       if (responseData['questions'] != null) {
         final questions = responseData['questions'] as List<dynamic>;
         final submission = responseData['submission'];
+        // Reopened test: carry on from the warnings already recorded.
+        if (submission is Map && submission['violations'] is Map) {
+          final saved = int.tryParse(
+            '${(submission['violations'] as Map)['tabSwitches'] ?? 0}',
+          );
+          if (saved != null && saved > _violationsCount) {
+            _violationsCount = saved;
+          }
+        }
         final settings = responseData['settings'] is Map
             ? Map<String, dynamic>.from(responseData['settings'])
             : <String, dynamic>{};
@@ -446,21 +683,23 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
         _maxTabSwitchesAllowed = int.tryParse(
           security['maxTabSwitchesAllowed']?.toString() ?? '',
         );
-        _examLive = true;
+        if (_enableProctoring && _cameraController == null) {
+          // Normally done before the start call (see _showInstructions); this
+          // covers a server that did not report the rules up front. Still
+          // before the timer, and the pop-up is never counted as a warning.
+          await _initializeCameraGuarded();
+        }
         _startTimer(
           durationMinutes: durationMinutes,
           startTime: startTime ?? DateTime.now(),
         );
-        if (_enableProctoring) {
-          // Camera init can raise a permission dialog if the start gate did not
-          // get a grant; that must not count as the student leaving.
-          _runWithoutLeaveTracking(_initializeCamera);
-        }
 
         setState(() {
           _questions = questions;
           _isLoading = false;
+          _errorMessage = null;
         });
+        _startQuestionTimer();
 
         if (submission != null && submission['answers'] != null) {
           final savedAnswers = submission['answers'] as List<dynamic>;
@@ -474,16 +713,8 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
                 )
                 .firstOrNull;
             if (savedAns != null) {
-              if (savedAns['selectedOptionId'] != null) {
-                _answers[i] = savedAns['selectedOptionId'];
-              } else if ((savedAns['subjectiveAnswerText'] ?? '')
-                  .toString()
-                  .isNotEmpty) {
-                // Typed (integer) answers are stored here, not as an option id.
-                _answers[i] = savedAns['subjectiveAnswerText'].toString();
-              } else if (savedAns['answerText'] != null) {
-                _answers[i] = savedAns['answerText'];
-              }
+              final restored = restoreAnswerString(savedAns as Map);
+              if (restored != null) _answers[i] = restored;
               if (savedAns['status'] == 'MARKED_FOR_REVIEW' ||
                   savedAns['status'] == 'ANSWERED_AND_MARKED_FOR_REVIEW') {
                 _markedForReview.add(i);
@@ -496,35 +727,30 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
         setState(() {
           _questions = widget.exam.questions;
           _isLoading = false;
+          _errorMessage = 'No questions are available in this exam paper yet.';
         });
       }
     } catch (e) {
+      final msg = e
+          .toString()
+          .replaceAll('Exception:', '')
+          .replaceAll('ApiException:', '')
+          .trim();
       setState(() {
+        _errorMessage = msg.isNotEmpty ? msg : 'Unable to load exam questions.';
         _questions = widget.exam.questions;
         _isLoading = false;
       });
+      if (msg.toLowerCase().contains('session expired') ||
+          msg.toLowerCase().contains('logged in on another device')) {
+        if (mounted) {
+          context.read<AuthBloc>().add(const AuthLogoutRequested());
+          Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil(AppRoutes.login, (route) => false);
+        }
+      }
     }
-  }
-
-  /// Questions rendered with a text box (no options). Mirrors the UI branch.
-  bool _isTypedQuestion(int index) {
-    final type = _questions[index]['type']?.toString() ?? 'MCQ';
-    return type != 'MCQ' && type != 'TRUE_FALSE';
-  }
-
-  /// Builds the answer fields of a save-answer payload. A typed number must go
-  /// in `subjectiveAnswerText`; the server casts `selectedOptionId` to an
-  /// ObjectId and rejects anything else (the QA "answer thrown away" bug).
-  Map<String, dynamic> _answerFields(int index, String? answer) {
-    final value = answer?.trim();
-    final hasValue = value != null && value.isNotEmpty;
-    if (_isTypedQuestion(index)) {
-      return {
-        'selectedOptionId': null,
-        'subjectiveAnswerText': hasValue ? value : null,
-      };
-    }
-    return {'selectedOptionId': answer, 'subjectiveAnswerText': null};
   }
 
   Future<void> _saveAnswer(int questionIndex, String answer) async {
@@ -546,11 +772,12 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
         !token.startsWith('mock-') &&
         !widget.exam.id.startsWith('custom-')) {
       try {
-        final payload = {
-          'questionId': qId,
-          ..._answerFields(questionIndex, answer),
-          'status': isMarked ? 'ANSWERED_AND_MARKED_FOR_REVIEW' : 'ANSWERED',
-        };
+        final payload = _answerPayload(
+          question,
+          qId,
+          answer,
+          isMarked ? 'ANSWERED_AND_MARKED_FOR_REVIEW' : 'ANSWERED',
+        );
         if (_isRemotePracticeSession) {
           final result = await context
               .read<ExamsRepository>()
@@ -603,6 +830,88 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
     }
   }
 
+  /// Returns the text controller for [index], seeded with any saved answer.
+  TextEditingController _controllerFor(int index) =>
+      _textControllers.putIfAbsent(
+        index,
+        () => TextEditingController(text: _answers[index] ?? ''),
+      );
+
+  /// Stores typed text locally and saves it ~800ms after the last keystroke,
+  /// so an answer is not lost if the student leaves without Save & Next.
+  void _onTextAnswerChanged(int index, String value) {
+    setState(() {
+      if (value.trim().isEmpty) {
+        _answers.remove(index);
+      } else {
+        _answers[index] = value;
+      }
+    });
+    final question = _questions[index];
+    final qId = question['_id'] ?? question['id'];
+    final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
+    if (qId == null ||
+        token.startsWith('mock-') ||
+        widget.exam.id.startsWith('custom-')) {
+      return;
+    }
+    final answer = _answers[index];
+    final marked = _markedForReview.contains(index);
+    final payload = _answerPayload(
+      question,
+      qId,
+      answer,
+      answer == null
+          ? (marked ? 'MARKED_FOR_REVIEW' : 'NOT_ANSWERED')
+          : (marked ? 'ANSWERED_AND_MARKED_FOR_REVIEW' : 'ANSWERED'),
+    );
+    final repo = context.read<ExamsRepository>();
+    final examId = widget.exam.id;
+    final remote = _isRemotePracticeSession;
+    // The closure captures repo/token/payload so it still works when it fires
+    // from dispose. Silent on failure: the local answer is resent later.
+    _pendingTextSaves.schedule(
+      index,
+      () => remote
+          ? repo.savePracticeProgress(token, examId, payload)
+          : repo.saveAnswer(token, examId, payload),
+    );
+  }
+
+  Map<String, dynamic> _answerPayload(
+    Map<String, dynamic> question,
+    dynamic questionId,
+    String? answer,
+    String status,
+  ) {
+    final type = (question['type'] ?? 'MCQ').toString().toUpperCase();
+    // Use the same parsed options the UI renders: when options are split out of
+    // the question text their ids are synthetic (opt_A_0), which the server
+    // can't grade; raw options alone would misclassify the question.
+    final parsed = _parseQuestionTextAndOptions(
+      question['questionText']?.toString() ?? '',
+      List<Map<String, dynamic>>.from(question['options'] ?? []),
+      type: type,
+    );
+    final fields = buildAnswerFields(
+      type: type,
+      hasOptions: (parsed['options'] as List).isNotEmpty,
+      answer: answer,
+    );
+    return {
+      'questionId': questionId,
+      // Keys depend on the question type; see answer_payload.dart.
+      ...fields,
+      // Never claim ANSWERED when no answer key could be sent.
+      'status': resolveAnswerStatus(
+        status: status,
+        answer: answer,
+        fields: fields,
+      ),
+      'timeSpentSeconds': _timeSpentPerQuestion[_questionIdFor(question)] ?? 0,
+    };
+  }
+
   Future<void> _showPracticeFeedback({
     required bool isCorrect,
     required String explanation,
@@ -621,73 +930,76 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      isCorrect
-                          ? Icons.check_circle_rounded
-                          : Icons.cancel_rounded,
-                      color: isCorrect ? AppTheme.success : AppTheme.error,
-                      size: 28,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      isCorrect ? 'Correct!' : 'Incorrect',
-                      style: TextStyle(
+      builder: (sheetContext) => Theme(
+        data: AppTheme.lightTheme,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        isCorrect
+                            ? Icons.check_circle_rounded
+                            : Icons.cancel_rounded,
                         color: isCorrect ? AppTheme.success : AppTheme.error,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
+                        size: 28,
                       ),
+                      const SizedBox(width: 10),
+                      Text(
+                        isCorrect ? 'Correct!' : 'Incorrect',
+                        style: TextStyle(
+                          color: isCorrect ? AppTheme.success : AppTheme.error,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  if (!isCorrect && correctText.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Correct answer',
+                      style: TextStyle(fontWeight: FontWeight.w700),
                     ),
-                    const Spacer(),
-                    IconButton(
-                      tooltip: 'Close',
-                      onPressed: () => Navigator.pop(sheetContext),
-                      icon: const Icon(Icons.close_rounded),
+                    const SizedBox(height: 4),
+                    MathHtmlRenderer(
+                      htmlContent: _formatHtml(correctText),
+                      baseFontSize: 15,
                     ),
                   ],
-                ),
-                if (!isCorrect && correctText.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Correct answer',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 4),
-                  MathHtmlRenderer(
-                    htmlContent: _formatHtml(correctText),
-                    baseFontSize: 15,
-                  ),
-                ],
-                if (explanation.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Explanation',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 4),
-                  MathHtmlRenderer(
-                    htmlContent: _formatHtml(explanation),
-                    baseFontSize: 15,
+                  if (explanation.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Explanation',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    MathHtmlRenderer(
+                      htmlContent: _formatHtml(explanation),
+                      baseFontSize: 15,
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      child: const Text('Close'),
+                    ),
                   ),
                 ],
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(sheetContext),
-                    child: const Text('Close'),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -719,7 +1031,7 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
               const SizedBox(width: 8),
               Text(
                 isCorrect ? 'Correct!' : 'Incorrect',
-                style: TextStyle(color: color, fontWeight: FontWeight.w800),
+                style: TextStyle(color: color, fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -761,13 +1073,14 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
         !token.startsWith('mock-') &&
         !widget.exam.id.startsWith('custom-')) {
       try {
-        final payload = {
-          'questionId': qId,
-          ..._answerFields(_currentQuestionIndex, answer),
-          'status': answer != null
+        final payload = _answerPayload(
+          question,
+          qId,
+          answer,
+          answer != null
               ? (isMarked ? 'ANSWERED_AND_MARKED_FOR_REVIEW' : 'ANSWERED')
               : (isMarked ? 'MARKED_FOR_REVIEW' : 'NOT_ANSWERED'),
-        };
+        );
         if (_isRemotePracticeSession) {
           await context.read<ExamsRepository>().savePracticeProgress(
             token,
@@ -809,8 +1122,9 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
     final String? previousAnswer = _answers[_currentQuestionIndex];
     setState(() {
       _answers.remove(_currentQuestionIndex);
-      _typedControllers[_currentQuestionIndex]?.clear();
     });
+    // Empty the typed box too, or the cleared answer would still show.
+    _textControllers[_currentQuestionIndex]?.clear();
 
     final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
     final question = _questions[_currentQuestionIndex];
@@ -821,12 +1135,12 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
         !token.startsWith('mock-') &&
         !widget.exam.id.startsWith('custom-')) {
       try {
-        final payload = {
-          'questionId': qId,
-          'selectedOptionId': null,
-          'subjectiveAnswerText': null,
-          'status': isMarked ? 'MARKED_FOR_REVIEW' : 'NOT_ANSWERED',
-        };
+        final payload = _answerPayload(
+          question,
+          qId,
+          null,
+          isMarked ? 'MARKED_FOR_REVIEW' : 'NOT_ANSWERED',
+        );
         if (_isRemotePracticeSession) {
           await context.read<ExamsRepository>().savePracticeProgress(
             token,
@@ -870,7 +1184,10 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
         : 'NOT_ANSWERED';
     await _saveAnswerWithStatus(_currentQuestionIndex, answer, status);
     if (_currentQuestionIndex < _questions.length - 1) {
-      setState(() => _currentQuestionIndex++);
+      setState(() {
+        _currentQuestionIndex++;
+        _visitedQuestions.add(_currentQuestionIndex);
+      });
     }
   }
 
@@ -896,7 +1213,10 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
       'ANSWERED_AND_MARKED_FOR_REVIEW',
     );
     if (_currentQuestionIndex < _questions.length - 1) {
-      setState(() => _currentQuestionIndex++);
+      setState(() {
+        _currentQuestionIndex++;
+        _visitedQuestions.add(_currentQuestionIndex);
+      });
     }
   }
 
@@ -910,7 +1230,10 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
         : 'MARKED_FOR_REVIEW';
     await _saveAnswerWithStatus(_currentQuestionIndex, answer, status);
     if (_currentQuestionIndex < _questions.length - 1) {
-      setState(() => _currentQuestionIndex++);
+      setState(() {
+        _currentQuestionIndex++;
+        _visitedQuestions.add(_currentQuestionIndex);
+      });
     }
   }
 
@@ -919,6 +1242,8 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
     String? answer,
     String status,
   ) async {
+    // An explicit save supersedes the pending debounced one for this question.
+    _pendingTextSaves.cancel(questionIndex);
     final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
     final question = _questions[questionIndex];
     final qId = question['_id'] ?? question['id'];
@@ -927,11 +1252,7 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
         !token.startsWith('mock-') &&
         !widget.exam.id.startsWith('custom-')) {
       try {
-        final payload = {
-          'questionId': qId,
-          ..._answerFields(questionIndex, answer),
-          'status': status,
-        };
+        final payload = _answerPayload(question, qId, answer, status);
         if (_isRemotePracticeSession) {
           await context.read<ExamsRepository>().savePracticeProgress(
             token,
@@ -951,47 +1272,6 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
     }
   }
 
-  /// Asks the student to confirm before a manual submit. Auto-submit paths
-  /// (time up, too many leaves) call [_submitExam] directly and skip this.
-  Future<void> _confirmAndSubmit() async {
-    if (_isSubmitting) return;
-    final total = _questions.length;
-    final answered = _answers.values.where((a) => a.trim().isNotEmpty).length;
-    final marked = _markedForReview.length;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text(ExamStrings.submitTitle),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(ExamStrings.fill(ExamStrings.submitAnswered, {'n': answered})),
-            Text(
-              ExamStrings.fill(ExamStrings.submitNotAnswered, {
-                'n': total - answered,
-              }),
-            ),
-            Text(ExamStrings.fill(ExamStrings.submitMarked, {'n': marked})),
-            const SizedBox(height: 12),
-            const Text(ExamStrings.submitWarning),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(ExamStrings.goBack),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(ExamStrings.submit),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && mounted) await _submitExam();
-  }
-
   Future<void> _submitExam() async {
     if (widget.exam.submissionStatus == 'SUBMITTED') return;
     if (_isSubmitting) return;
@@ -1000,35 +1280,35 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
 
     try {
       final violationsObj = {'tabSwitches': _violationsCount};
+      _questionTimer?.cancel();
 
       if (_isRemotePracticeSession) {
         await context.read<ExamsRepository>().submitPracticeSession(
           token,
           widget.exam.id,
+          {'timeSpentPerQuestion': _timeSpentPerQuestion},
         );
       } else {
-        await context.read<ExamsRepository>().submitExam(
-          token,
-          widget.exam.id,
-          {'violations': violationsObj, 'isAutoSubmit': _remainingSeconds <= 0},
-        );
+        await context
+            .read<ExamsRepository>()
+            .submitExam(token, widget.exam.id, {
+              'violations': violationsObj,
+              'isAutoSubmit': _remainingSeconds <= 0,
+              'timeSpentPerQuestion': _timeSpentPerQuestion,
+            });
       }
 
-      _examLive = false;
       if (mounted) {
+        _closeOwnDialogs();
+        final messenger = ScaffoldMessenger.of(context);
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _autoSubmittedForLeaves
-                  ? ExamStrings.autoSubmittedLeaves
-                  : 'Test submitted successfully!',
-            ),
-          ),
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Test submitted successfully!')),
         );
       }
     } catch (e) {
       if (mounted) {
+        _closeOwnDialogs();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error submitting test: $e')));
@@ -1037,181 +1317,89 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
     }
   }
 
+  Future<void> _confirmSubmit() async {
+    if (_isSubmitting || !mounted) return;
+    final answeredCount = _answers.length.clamp(0, _questions.length);
+    final unansweredCount = (_questions.length - answeredCount).clamp(
+      0,
+      _questions.length,
+    );
+    final shouldSubmit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Theme(
+        data: AppTheme.lightTheme,
+        child: AlertDialog(
+          title: const Text('Submit test?'),
+          content: Text(
+            'Answered: $answeredCount\n'
+            'Unanswered: $unansweredCount\n\n'
+            'You cannot change answers after submission.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Review'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Submit'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (shouldSubmit == true) await _submitExam();
+  }
+
   String _formatHtml(String? htmlString) {
     if (htmlString == null || htmlString.isEmpty) return '';
     final String domain = AppConfig.webUrl;
     return htmlString.replaceAll('src="/', 'src="$domain/');
   }
 
-  bool _isDummyOptionText(String txt) {
-    final clean = txt
-        .replaceAll(RegExp(r'&nbsp;|\u00A0'), ' ')
-        .replaceAll(RegExp(r'</?(?:p|div|br)\s*/?>', caseSensitive: false), '')
-        .trim();
-    final dummyRegex = RegExp(
-      r'^(?:\([A-D1-4]\)|[A-D1-4][\.\)]?|option\s*[A-D1-4]|)$',
-      caseSensitive: false,
-    );
-    return clean.isEmpty || dummyRegex.hasMatch(clean);
-  }
+  String _getOptionHtml(Map<String, dynamic> opt) =>
+      _formatHtml(optionHtml(opt));
 
-  String _getOptionHtml(Map<String, dynamic> opt) {
-    final rawText =
-        opt['text'] ??
-        opt['optionText'] ??
-        opt['value'] ??
-        opt['title'] ??
-        opt['content'] ??
-        opt['statement'] ??
-        '';
-    final imageUrl =
-        opt['imageUrl'] ?? opt['image'] ?? opt['img'] ?? opt['url'];
-
-    String textStr = rawText.toString().trim();
-
-    if (imageUrl != null && imageUrl.toString().trim().isNotEmpty) {
-      final imgStr = imageUrl.toString().trim();
-      if (!textStr.toLowerCase().contains('<img') &&
-          !textStr.contains(imgStr)) {
-        textStr = textStr.isEmpty
-            ? '<img src="$imgStr" />'
-            : '$textStr<br/><img src="$imgStr" />';
-      }
-    }
-
-    String stripped = textStr
-        .replaceAll(
-          RegExp(
-            r'^(?:<p>|<div|<br\s*/?>|\s)*(?:\([A-D1-4]\)|[A-D1-4][\.\:\)])\s*',
-            caseSensitive: false,
-          ),
-          '',
-        )
-        .trim();
-    final finalText = stripped.isNotEmpty ? stripped : textStr;
-    return _formatHtml(finalText);
-  }
-
+  // Shared with the DPP player (question_html.dart): never strips "1."-"4.",
+  // "(A)" or "A." from real content, and never splits options out of a
+  // typed-answer question.
   Map<String, dynamic> _parseQuestionTextAndOptions(
     String rawQuestionText,
-    List<Map<String, dynamic>> existingOptions,
-  ) {
-    if (rawQuestionText.isEmpty) {
-      return {'questionText': rawQuestionText, 'options': existingOptions};
-    }
-
-    // SAFEGUARD 1: Do NOT parse/split if question text contains HTML images or image URLs
-    if (rawQuestionText.toLowerCase().contains('<img') ||
-        rawQuestionText.toLowerCase().contains('amazonaws.com') ||
-        rawQuestionText.toLowerCase().contains('.png') ||
-        rawQuestionText.toLowerCase().contains('.jpg')) {
-      return {'questionText': rawQuestionText, 'options': existingOptions};
-    }
-
-    // SAFEGUARD 2: Do NOT parse/split if options already contain real non-dummy text
-    final bool hasRealOptionTexts =
-        existingOptions.isNotEmpty &&
-        existingOptions.any((o) {
-          final txt = (o['text'] ?? o['optionText'] ?? o['value'] ?? '')
-              .toString();
-          return !_isDummyOptionText(txt);
-        });
-
-    if (hasRealOptionTexts) {
-      return {'questionText': rawQuestionText, 'options': existingOptions};
-    }
-
-    // STRICT MATCHING: Case-sensitive uppercase (A), (B), (C), (D) or (1), (2), (3), (4)
-    final RegExp firstOptionRegex = RegExp(
-      r'(?:\([A-D1-4]\)|[A-D1-4][\.\:\)])\s*',
-    );
-    final matchA = firstOptionRegex.firstMatch(rawQuestionText);
-
-    if (matchA == null) {
-      return {'questionText': rawQuestionText, 'options': existingOptions};
-    }
-
-    final promptText = rawQuestionText.substring(0, matchA.start).trim();
-    final questionText = promptText.isNotEmpty ? promptText : rawQuestionText;
-    final optionsSegment = rawQuestionText.substring(matchA.start);
-
-    final RegExp splitPattern = RegExp(
-      r'(?:<p>|<div|<br\s*/?>|\s|^)*(?:\(?([A-D1-4])\)?[\.\:\)\s])\s*',
-    );
-
-    final matches = splitPattern.allMatches(optionsSegment).toList();
-
-    if (matches.length < 2) {
-      return {'questionText': rawQuestionText, 'options': existingOptions};
-    }
-
-    List<Map<String, dynamic>> finalOptions = [];
-
-    for (int i = 0; i < matches.length; i++) {
-      final currentMatch = matches[i];
-      final letter = currentMatch.group(1)!.toUpperCase();
-      final startIdx = currentMatch.end;
-      final endIdx = (i + 1 < matches.length)
-          ? matches[i + 1].start
-          : optionsSegment.length;
-
-      var optText = optionsSegment.substring(startIdx, endIdx).trim();
-      optText = optText
-          .replaceAll(
-            RegExp(r'</?(?:p|div|br)\s*/?>', caseSensitive: false),
-            ' ',
-          )
-          .trim();
-
-      Map<String, dynamic> optObj = (i < existingOptions.length)
-          ? Map<String, dynamic>.from(existingOptions[i])
-          : {};
-
-      final optId = optObj['_id'] ?? optObj['id'] ?? 'opt_${letter}_$i';
-      optObj['_id'] = optId;
-      optObj['id'] = optId;
-      optObj['text'] = optText.isNotEmpty
-          ? optText
-          : (optObj['text'] ?? 'Option $letter');
-
-      finalOptions.add(optObj);
-    }
-
-    return {
-      'questionText': questionText,
-      'options': finalOptions.isNotEmpty ? finalOptions : existingOptions,
-    };
-  }
+    List<Map<String, dynamic>> existingOptions, {
+    String type = 'MCQ',
+  }) =>
+      parseQuestionTextAndOptions(rawQuestionText, existingOptions, type: type);
 
   Future<void> _handleExitOrPause(bool isSubmitted) async {
     if (isSubmitted) {
       Navigator.of(context).pop();
       return;
     }
-    final String typeTitle = _isDpp
-        ? 'DPP'
-        : (_isPractice ? 'Practice' : 'Test');
+    final String typeTitle = _isPractice ? 'Practice' : 'Test';
     final shouldExit = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          _isPracticeOrDpp ? 'Pause & Exit $typeTitle?' : 'Exit Test?',
-        ),
-        content: Text(
-          _isPracticeOrDpp
-              ? 'Your progress has been saved automatically. You can resume anytime.'
-              : 'Your progress will be saved.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Resume'),
+      builder: (ctx) => Theme(
+        data: AppTheme.lightTheme,
+        child: AlertDialog(
+          title: Text(
+            _isPracticeOrDpp ? 'Pause & Exit $typeTitle?' : 'Exit Test?',
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(_isPracticeOrDpp ? 'Pause & Exit' : 'Exit'),
+          content: Text(
+            _isPracticeOrDpp
+                ? 'Your progress has been saved automatically. You can resume anytime.'
+                : 'Your progress will be saved.',
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Resume'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(_isPracticeOrDpp ? 'Pause & Exit' : 'Exit'),
+            ),
+          ],
+        ),
       ),
     );
     if ((shouldExit ?? false) && mounted) {
@@ -1219,8 +1407,15 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
     }
   }
 
+  // The test screen always looks like the real (white) NTA exam screen,
+  // even when the rest of the app is in dark mode.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => Theme(
+    data: AppTheme.lightTheme,
+    child: Builder(builder: _buildPlayer),
+  );
+
+  Widget _buildPlayer(BuildContext context) {
     if (_isPracticeOrDpp) {
       return DppPracticePlayerScreen(exam: widget.exam);
     }
@@ -1233,23 +1428,132 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
         appBar: AppBar(
           title: Text(widget.exam.title),
           leading: const BackButton(),
+          systemOverlayStyle: _examSystemUi,
         ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_questions.isEmpty) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      final isAccessIssue =
+          _errorMessage != null &&
+          (_errorMessage!.toLowerCase().contains('access') ||
+              _errorMessage!.toLowerCase().contains('plan') ||
+              _errorMessage!.toLowerCase().contains('course') ||
+              _errorMessage!.toLowerCase().contains('enroll') ||
+              _errorMessage!.toLowerCase().contains('forbidden'));
+
       return Scaffold(
         appBar: AppBar(
           title: Text(widget.exam.title),
           leading: const BackButton(),
+          systemOverlayStyle: _examSystemUi,
         ),
-        body: const Center(child: Text('No questions available in this exam.')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color:
+                        (isAccessIssue
+                                ? const Color(0xFFF59E0B)
+                                : AppTheme.primary)
+                            .withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: PhosphorIcon(
+                    isAccessIssue
+                        ? PhosphorIcons.lockKey
+                        : PhosphorIcons.newspaperClipping,
+                    size: 48,
+                    color: isAccessIssue
+                        ? const Color(0xFFD97706)
+                        : AppTheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  isAccessIssue ? 'Test Access Required' : 'No Questions Found',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _errorMessage ??
+                      'This exam paper does not have any questions configured yet. Please check back later or contact your instructor.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.4,
+                    color: isDark ? Colors.white70 : const Color(0xFF64748B),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 28),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const PhosphorIcon(
+                        PhosphorIcons.arrowLeft,
+                        size: 16,
+                      ),
+                      label: const Text('Go Back'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _isLoading = true;
+                          _errorMessage = null;
+                        });
+                        _startExam();
+                      },
+                      icon: const PhosphorIcon(
+                        PhosphorIcons.arrowsClockwise,
+                        size: 16,
+                      ),
+                      label: const Text('Retry'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
 
     final question = _questions[_currentQuestionIndex];
-    _visited.add(_currentQuestionIndex);
     final String rawQuestionText =
         question['questionText']?.toString() ?? 'Question';
     final questionType = question['type']?.toString() ?? 'MCQ';
@@ -1259,672 +1563,630 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
     final parsedQuestion = _parseQuestionTextAndOptions(
       rawQuestionText,
       rawOptions,
+      type: questionType,
     );
     final questionText = parsedQuestion['questionText'] as String;
     final options = List<Map<String, dynamic>>.from(
       parsedQuestion['options'] as List,
     );
-    final imageValue = question['imageUrl'] ?? question['image'];
-    final String? imageUrl = imageValue is String ? imageValue : null;
+    final imageValue =
+        question['questionImageUrl'] ??
+        question['imageUrl'] ??
+        question['image'];
+    // The server now also puts this picture into the question HTML; show the
+    // separate field only when it is not there already.
+    final String? imageUrl =
+        imageValue is String &&
+            imageValue.trim().isNotEmpty &&
+            !questionText.contains(imageValue.trim())
+        ? imageValue.trim()
+        : null;
 
     final bool isSubmitted = widget.exam.submissionStatus == 'SUBMITTED';
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return;
-        // With the palette open, Back should only close it, not ask to exit.
-        final scaffold = _scaffoldKey.currentState;
-        if (scaffold != null && scaffold.isEndDrawerOpen) {
-          scaffold.closeEndDrawer();
-          return;
-        }
-        _handleExitOrPause(isSubmitted);
-      },
-      child: Scaffold(
-        key: _scaffoldKey,
-        endDrawer: _buildQuestionPalette(),
-        appBar: AppBar(
-          // Long test names were cut to one line; allow two smaller lines.
-          title: Text(
-            widget.exam.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style:
-                (Theme.of(context).appBarTheme.titleTextStyle ??
-                        const TextStyle())
-                    .copyWith(fontSize: 14, height: 1.2),
-          ),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded),
-            onPressed: () => _handleExitOrPause(isSubmitted),
-          ),
-          actions: [
-            if (_isPracticeOrDpp && !isSubmitted) ...[
-              OutlinedButton.icon(
-                onPressed: () => _handleExitOrPause(isSubmitted),
-                icon: const Icon(Icons.pause_circle_outline_rounded, size: 16),
-                label: const Text('Pause / Exit'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: Colors.white38),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: _examSystemUi,
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) async {
+          if (didPop) return;
+          if (_scaffoldKey.currentState?.isEndDrawerOpen == true) {
+            Navigator.of(context).pop();
+            return;
+          }
+          _handleExitOrPause(isSubmitted);
+        },
+        child: Scaffold(
+          key: _scaffoldKey,
+          endDrawer: _buildQuestionPalette(),
+          appBar: AppBar(
+            systemOverlayStyle: _examSystemUi,
+            // "JEE Main Chapter Test: Limits" -> "Limits" on top, the series
+            // name small underneath, so the bar never shows two bold lines.
+            title: _ExamTitle(title: widget.exam.title),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded),
+              onPressed: () => _handleExitOrPause(isSubmitted),
+            ),
+            actions: [
+              if (_isPracticeOrDpp && !isSubmitted) ...[
+                OutlinedButton.icon(
+                  onPressed: () => _handleExitOrPause(isSubmitted),
+                  icon: const Icon(
+                    Icons.pause_circle_outline_rounded,
+                    size: 16,
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+                  label: const Text('Pause / Exit'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white38),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              FilledButton(
-                onPressed: _isSubmitting ? null : _submitExam,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
+                const SizedBox(width: 6),
+                FilledButton(
+                  onPressed: _isSubmitting ? null : _confirmSubmit,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(
+                    'Submit Practice',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ] else if (isSubmitted)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppTheme.primary.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Text(
+                    'Score: ${widget.exam.score ?? 0} / ${widget.exam.totalMarks}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primary,
+                      fontSize: 12,
+                    ),
+                  ),
+                )
+              else if (!_isPracticeOrDpp)
+                Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 6,
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: Text(
-                  _isDpp ? 'Submit DPP' : 'Submit Practice',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-            ] else if (isSubmitted)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  color: AppTheme.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: AppTheme.primary.withValues(alpha: 0.2),
-                  ),
-                ),
-                child: Text(
-                  'Score: ${widget.exam.score ?? 0} / ${widget.exam.totalMarks}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.primary,
-                    fontSize: 12,
-                  ),
-                ),
-              )
-            else if (!_isPracticeOrDpp)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  color: AppTheme.error.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: AppTheme.error.withValues(alpha: 0.2),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.alarm_rounded,
-                      color: AppTheme.error,
-                      size: 16,
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.error.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppTheme.error.withValues(alpha: 0.2),
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '$minutesStr:$secondsStr',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.alarm_rounded,
                         color: AppTheme.error,
-                        fontSize: 13,
+                        size: 16,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 6),
+                      Text(
+                        '$minutesStr:$secondsStr',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.error,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+              IconButton(
+                icon: const Icon(Icons.grid_view_rounded),
+                onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
               ),
-            IconButton(
-              icon: const Icon(Icons.grid_view_rounded),
-              onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-            ),
-          ],
-        ),
-        body: Column(
-          children: [
-            LinearProgressIndicator(
-              value: (_currentQuestionIndex + 1) / _questions.length,
-              color: AppTheme.primary,
-              backgroundColor: AppTheme.primary.withValues(alpha: 0.1),
-              minHeight: 5,
-            ),
-            Expanded(
-              child: Stack(
-                children: [
-                  SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+            ],
+          ),
+          body: Column(
+            children: [
+              LinearProgressIndicator(
+                value: (_currentQuestionIndex + 1) / _questions.length,
+                color: AppTheme.primary,
+                backgroundColor: AppTheme.primary.withValues(alpha: 0.1),
+                minHeight: 5,
+              ),
+              Expanded(
+                // The camera preview floats over the question (draggable) and
+                // takes no layout space, so questions are never pushed down.
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppTheme.primary.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                'QUESTION ${_currentQuestionIndex + 1}',
-                                style: const TextStyle(
-                                  color: AppTheme.primary,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                questionType,
-                                style: const TextStyle(
-                                  color: Colors.grey,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            if (!_isPracticeOrDpp && _violationsCount > 0)
-                              Tooltip(
-                                triggerMode: TooltipTriggerMode.tap,
-                                showDuration: const Duration(seconds: 4),
-                                message: (_maxTabSwitchesAllowed ?? 0) > 0
-                                    ? ExamStrings.fill(
-                                        ExamStrings.violationTooltip,
-                                        {
-                                          'n': _violationsCount,
-                                          'max': _maxTabSwitchesAllowed!,
-                                        },
-                                      )
-                                    : ExamStrings.fill(
-                                        ExamStrings.violationTooltipUnlimited,
-                                        {'n': _violationsCount},
-                                      ),
-                                child: Container(
+                            Row(
+                              children: [
+                                Container(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
+                                    horizontal: 10,
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: AppTheme.error.withValues(
+                                    color: AppTheme.primary.withValues(
                                       alpha: 0.1,
                                     ),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.warning_amber_rounded,
-                                        color: AppTheme.error,
-                                        size: 14,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '$_violationsCount',
-                                        style: const TextStyle(
-                                          color: AppTheme.error,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
+                                  child: Text(
+                                    'QUESTION ${_currentQuestionIndex + 1}',
+                                    style: const TextStyle(
+                                      color: AppTheme.primary,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      letterSpacing: 0.5,
+                                    ),
                                   ),
                                 ),
-                              ),
-                          ],
-                        ),
-                        MathHtmlRenderer(
-                          htmlContent: _formatHtml(questionText),
-                          baseFontSize: 18.0,
-                        ),
-                        if (imageUrl != null && imageUrl.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxHeight: 200),
-                              child: Image.network(
-                                imageUrl.startsWith('http')
-                                    ? imageUrl
-                                    : '${AppConfig.baseUrl.replaceAll('/api/v1', '')}$imageUrl',
-                                width: double.infinity,
-                                fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return const SizedBox.shrink();
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 24),
-                        if (questionType == 'MCQ' ||
-                            questionType == 'TRUE_FALSE')
-                          ...options.asMap().entries.map((entry) {
-                            final optIndex = entry.key;
-                            final opt = entry.value;
-                            final String optId =
-                                (opt['_id'] ??
-                                        opt['id'] ??
-                                        opt['optionId'] ??
-                                        opt['value'] ??
-                                        optIndex.toString())
-                                    .toString();
-                            final String letter = String.fromCharCode(
-                              65 + optIndex,
-                            );
-                            final String optHtml = _getOptionHtml(opt);
-                            final String? optImg =
-                                (opt['imageUrl'] ?? opt['image'])?.toString();
-
-                            final String currentSaved =
-                                (_answers[_currentQuestionIndex] ?? '')
-                                    .toString();
-                            final bool isSelected =
-                                currentSaved.isNotEmpty &&
-                                (currentSaved == optId ||
-                                    currentSaved == optIndex.toString() ||
-                                    currentSaved.toUpperCase() == letter ||
-                                    (opt['_id'] != null &&
-                                        currentSaved ==
-                                            opt['_id'].toString()) ||
-                                    (opt['id'] != null &&
-                                        currentSaved == opt['id'].toString()));
-
-                            final isCorrectOpt = opt['isCorrect'] == true;
-                            final practiceFeedback =
-                                _practiceFeedback[_currentQuestionIndex];
-                            final isPracticeChecked =
-                                _isInteractivePractice &&
-                                practiceFeedback != null;
-
-                            Color cardBg = isSelected
-                                ? AppTheme.primary.withValues(alpha: 0.08)
-                                : Colors.white;
-                            Color cardBorder = isSelected
-                                ? AppTheme.primary
-                                : Colors.grey.shade300;
-                            Color circleBg = isSelected
-                                ? AppTheme.primary
-                                : Colors.grey.shade100;
-                            Color letterColor = isSelected
-                                ? Colors.white
-                                : Colors.grey.shade800;
-
-                            if (isSubmitted || isPracticeChecked) {
-                              if (isCorrectOpt) {
-                                cardBg = const Color(0xFFF0FDF4);
-                                cardBorder = const Color(0xFF22C55E);
-                                circleBg = const Color(0xFF22C55E);
-                                letterColor = Colors.white;
-                              } else if (isSelected && !isCorrectOpt) {
-                                cardBg = const Color(0xFFFEF2F2);
-                                cardBorder = const Color(0xFFEF4444);
-                                circleBg = const Color(0xFFEF4444);
-                                letterColor = Colors.white;
-                              }
-                            }
-
-                            return GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () {
-                                if (!isSubmitted &&
-                                    (!_isInteractivePractice ||
-                                        !_lockedPracticeAnswers.contains(
-                                          _currentQuestionIndex,
-                                        ))) {
-                                  _saveAnswer(_currentQuestionIndex, optId);
-                                }
-                              },
-                              child: Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: cardBg,
-                                  border: Border.all(
-                                    color: cardBorder,
-                                    width:
-                                        (isSelected ||
-                                            ((isSubmitted ||
-                                                    isPracticeChecked) &&
-                                                isCorrectOpt))
-                                        ? 2
-                                        : 1,
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
                                   ),
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: isSelected
-                                      ? [
-                                          BoxShadow(
-                                            color: AppTheme.primary.withValues(
-                                              alpha: 0.08,
-                                            ),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ]
-                                      : null,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    questionType,
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
                                 ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                const Spacer(),
+                                if (!_isPracticeOrDpp && _violationsCount > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.error.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
                                       children: [
-                                        Container(
-                                          width: 30,
-                                          height: 30,
-                                          decoration: BoxDecoration(
-                                            color: circleBg,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: Center(
-                                            child:
-                                                isSelected &&
-                                                    !isSubmitted &&
-                                                    !isPracticeChecked
-                                                ? const Icon(
-                                                    Icons.check_rounded,
-                                                    color: Colors.white,
-                                                    size: 18,
-                                                  )
-                                                : Text(
-                                                    letter,
-                                                    style: TextStyle(
-                                                      color: letterColor,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 13,
-                                                    ),
-                                                  ),
-                                          ),
+                                        const Icon(
+                                          Icons.warning_amber_rounded,
+                                          color: AppTheme.error,
+                                          size: 14,
                                         ),
-                                        const SizedBox(width: 14),
-                                        Expanded(
-                                          child: Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 3,
-                                            ),
-                                            child: MathHtmlRenderer(
-                                              htmlContent: optHtml,
-                                              baseFontSize: 15.0,
-                                            ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '$_violationsCount',
+                                          style: const TextStyle(
+                                            color: AppTheme.error,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
                                           ),
                                         ),
                                       ],
                                     ),
-                                    if (optImg != null &&
-                                        optImg.isNotEmpty) ...[
-                                      const SizedBox(height: 10),
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          left: 44,
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          child: ConstrainedBox(
-                                            constraints: const BoxConstraints(
-                                              maxHeight: 140,
-                                            ),
-                                            child: Image.network(
-                                              optImg.startsWith('http')
-                                                  ? optImg
-                                                  : '${AppConfig.webUrl}${optImg.startsWith('/') ? '' : '/'}$optImg',
-                                              fit: BoxFit.contain,
-                                              errorBuilder: (_, __, ___) =>
-                                                  const SizedBox.shrink(),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            );
-                          })
-                        else
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 180),
-                              child: TextField(
-                                // Keyed controller per question keeps the typed
-                                // value visible when the student navigates back.
-                                key: ValueKey('typed-$_currentQuestionIndex'),
-                                controller: _typedControllers.putIfAbsent(
-                                  _currentQuestionIndex,
-                                  () => TextEditingController(
-                                    text: _answers[_currentQuestionIndex] ?? '',
                                   ),
-                                ),
-                                maxLines: 1,
-                                readOnly: isSubmitted,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      signed: true,
-                                      decimal: true,
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            // Normal text wraps to the screen width; only a display
+                            // equation wider than the screen scrolls sideways.
+                            MathHtmlRenderer(
+                              key: ValueKey('q_text_$_currentQuestionIndex'),
+                              htmlContent: _formatHtml(questionText),
+                              baseFontSize: 16.0,
+                            ),
+                            if (imageUrl != null) ...[
+                              const SizedBox(height: 12),
+                              QuestionImage(url: imageUrl),
+                            ],
+                            const SizedBox(height: 24),
+                            // Show option cards whenever the question has options,
+                            // whatever its type; a typed box only when it has none.
+                            if (options.isNotEmpty)
+                              ...options.asMap().entries.map((entry) {
+                                final optIndex = entry.key;
+                                final opt = entry.value;
+                                final String optId =
+                                    (opt['_id'] ??
+                                            opt['id'] ??
+                                            opt['optionId'] ??
+                                            opt['value'] ??
+                                            optIndex.toString())
+                                        .toString();
+                                final String letter = String.fromCharCode(
+                                  65 + optIndex,
+                                );
+                                final String optHtml = _getOptionHtml(opt);
+
+                                final String currentSaved =
+                                    (_answers[_currentQuestionIndex] ?? '')
+                                        .toString();
+                                final bool isMulti =
+                                    questionType.toUpperCase() ==
+                                    'MULTIPLE_CORRECT';
+                                final bool isSelected = isMulti
+                                    ? splitMultiAnswer(
+                                        currentSaved,
+                                      ).contains(optId)
+                                    : currentSaved.isNotEmpty &&
+                                          (currentSaved == optId ||
+                                              currentSaved ==
+                                                  optIndex.toString() ||
+                                              currentSaved.toUpperCase() ==
+                                                  letter ||
+                                              (opt['_id'] != null &&
+                                                  currentSaved ==
+                                                      opt['_id'].toString()) ||
+                                              (opt['id'] != null &&
+                                                  currentSaved ==
+                                                      opt['id'].toString()));
+
+                                final isCorrectOpt = opt['isCorrect'] == true;
+                                final practiceFeedback =
+                                    _practiceFeedback[_currentQuestionIndex];
+                                final isPracticeChecked =
+                                    _isInteractivePractice &&
+                                    practiceFeedback != null;
+
+                                Color cardBg = isSelected
+                                    ? AppTheme.primary.withValues(alpha: 0.08)
+                                    : Colors.white;
+                                Color cardBorder = isSelected
+                                    ? AppTheme.primary
+                                    : Colors.grey.shade300;
+                                Color circleBg = isSelected
+                                    ? AppTheme.primary
+                                    : Colors.grey.shade100;
+                                Color letterColor = isSelected
+                                    ? Colors.white
+                                    : Colors.grey.shade800;
+
+                                if (isSubmitted || isPracticeChecked) {
+                                  if (isCorrectOpt) {
+                                    cardBg = const Color(0xFFF0FDF4);
+                                    cardBorder = const Color(0xFF22C55E);
+                                    circleBg = const Color(0xFF22C55E);
+                                    letterColor = Colors.white;
+                                  } else if (isSelected && !isCorrectOpt) {
+                                    cardBg = const Color(0xFFFEF2F2);
+                                    cardBorder = const Color(0xFFEF4444);
+                                    circleBg = const Color(0xFFEF4444);
+                                    letterColor = Colors.white;
+                                  }
+                                }
+
+                                return GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () {
+                                    if (!isSubmitted &&
+                                        (!_isInteractivePractice ||
+                                            !_lockedPracticeAnswers.contains(
+                                              _currentQuestionIndex,
+                                            ))) {
+                                      if (isMulti) {
+                                        final picked = splitMultiAnswer(
+                                          _answers[_currentQuestionIndex],
+                                        );
+                                        picked.contains(optId)
+                                            ? picked.remove(optId)
+                                            : picked.add(optId);
+                                        if (picked.isEmpty) {
+                                          _clearResponse();
+                                        } else {
+                                          _saveAnswer(
+                                            _currentQuestionIndex,
+                                            picked.join(kMultiAnswerSeparator),
+                                          );
+                                        }
+                                      } else {
+                                        _saveAnswer(
+                                          _currentQuestionIndex,
+                                          optId,
+                                        );
+                                      }
+                                    }
+                                  },
+                                  child: Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: cardBg,
+                                      border: Border.all(
+                                        color: cardBorder,
+                                        width:
+                                            (isSelected ||
+                                                ((isSubmitted ||
+                                                        isPracticeChecked) &&
+                                                    isCorrectOpt))
+                                            ? 2
+                                            : 1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(16),
+                                      boxShadow: isSelected
+                                          ? [
+                                              BoxShadow(
+                                                color: AppTheme.primary
+                                                    .withValues(alpha: 0.08),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 4),
+                                              ),
+                                            ]
+                                          : null,
                                     ),
-                                inputFormatters: [NumericAnswerFormatter()],
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Container(
+                                              width: 30,
+                                              height: 30,
+                                              decoration: BoxDecoration(
+                                                color: circleBg,
+                                                // Square badge hints "pick many".
+                                                shape: isMulti
+                                                    ? BoxShape.rectangle
+                                                    : BoxShape.circle,
+                                                borderRadius: isMulti
+                                                    ? BorderRadius.circular(8)
+                                                    : null,
+                                              ),
+                                              child: Center(
+                                                child:
+                                                    isSelected &&
+                                                        !isSubmitted &&
+                                                        !isPracticeChecked
+                                                    ? const Icon(
+                                                        Icons.check_rounded,
+                                                        color: Colors.white,
+                                                        size: 18,
+                                                      )
+                                                    : Text(
+                                                        letter,
+                                                        style: TextStyle(
+                                                          color: letterColor,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          fontSize: 13,
+                                                        ),
+                                                      ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 14),
+                                            Expanded(
+                                              child: Padding(
+                                                padding: const EdgeInsets.only(
+                                                  top: 3,
+                                                ),
+                                                // Not interactive: a tap on the
+                                                // formula selects the whole card.
+                                                child: MathHtmlRenderer(
+                                                  key: ValueKey(
+                                                    'opt_${_currentQuestionIndex}_$optIndex',
+                                                  ),
+                                                  htmlContent: optHtml,
+                                                  baseFontSize: 15.0,
+                                                  interactive: false,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              })
+                            else
+                              TextField(
+                                // Per-question key + controller: no carry-over (E4).
+                                key: ValueKey(
+                                  'answer_text_$_currentQuestionIndex',
+                                ),
+                                controller: _controllerFor(
+                                  _currentQuestionIndex,
+                                ),
+                                maxLines: isNumericQuestionType(questionType)
+                                    ? 1
+                                    : 4,
+                                minLines: 1,
+                                keyboardType:
+                                    isNumericQuestionType(questionType)
+                                    ? const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                        signed: true,
+                                      )
+                                    : TextInputType.multiline,
+                                inputFormatters:
+                                    isNumericQuestionType(questionType)
+                                    ? [
+                                        FilteringTextInputFormatter.allow(
+                                          RegExp(r'^-?\d*\.?\d*'),
+                                        ),
+                                      ]
+                                    : null,
+                                readOnly: isSubmitted,
                                 decoration: InputDecoration(
-                                  hintText: ExamStrings.integerHint,
-                                  isDense: true,
+                                  hintText: 'Type your answer here...',
                                   enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(16),
                                     borderSide: BorderSide(
                                       color: Colors.grey.shade300,
                                     ),
                                   ),
                                   focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(16),
                                     borderSide: const BorderSide(
                                       color: AppTheme.primary,
                                       width: 2,
                                     ),
                                   ),
                                 ),
-                                // An empty box means "not answered", so drop the key.
-                                onChanged: (val) => setState(() {
-                                  final v = val.trim();
-                                  if (v.isEmpty) {
-                                    _answers.remove(_currentQuestionIndex);
-                                  } else {
-                                    _answers[_currentQuestionIndex] = v;
-                                  }
-                                }),
-                              ),
-                            ),
-                          ),
-                        if (_isInteractivePractice &&
-                            _practiceFeedback.containsKey(
-                              _currentQuestionIndex,
-                            )) ...[
-                          const SizedBox(height: 8),
-                          _buildInlinePracticeFeedback(
-                            _practiceFeedback[_currentQuestionIndex]!,
-                          ),
-                        ],
-                        (() {
-                          final String explanationText =
-                              question['explanation']?.toString() ??
-                              question['solution']?.toString() ??
-                              '';
-                          if (isSubmitted && explanationText.isNotEmpty) {
-                            return Container(
-                              width: double.infinity,
-                              margin: const EdgeInsets.only(top: 16),
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEFF6FF),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: const Color(0xFFBFDBFE),
+                                onChanged: (val) => _onTextAnswerChanged(
+                                  _currentQuestionIndex,
+                                  val,
                                 ),
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Row(
+                            if (_isInteractivePractice &&
+                                _practiceFeedback.containsKey(
+                                  _currentQuestionIndex,
+                                )) ...[
+                              const SizedBox(height: 8),
+                              _buildInlinePracticeFeedback(
+                                _practiceFeedback[_currentQuestionIndex]!,
+                              ),
+                            ],
+                            (() {
+                              final String explanationText =
+                                  question['explanation']?.toString() ??
+                                  question['solution']?.toString() ??
+                                  '';
+                              if (isSubmitted && explanationText.isNotEmpty) {
+                                return Container(
+                                  width: double.infinity,
+                                  margin: const EdgeInsets.only(top: 16),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEFF6FF),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: const Color(0xFFBFDBFE),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Icon(
-                                        Icons.check_circle_rounded,
-                                        color: Color(0xFF2563EB),
-                                        size: 20,
+                                      const Row(
+                                        children: [
+                                          Icon(
+                                            Icons.check_circle_rounded,
+                                            color: Color(0xFF2563EB),
+                                            size: 20,
+                                          ),
+                                          SizedBox(width: 8),
+                                          Text(
+                                            'Solution & Explanation',
+                                            style: TextStyle(
+                                              color: Color(0xFF1E40AF),
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                      SizedBox(width: 8),
-                                      Text(
-                                        'Solution & Explanation',
-                                        style: TextStyle(
-                                          color: Color(0xFF1E40AF),
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 15,
+                                      const SizedBox(height: 10),
+                                      MathHtmlRenderer(
+                                        htmlContent: _formatHtml(
+                                          explanationText,
                                         ),
+                                        baseFontSize: 14.5,
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 10),
-                                  MathHtmlRenderer(
-                                    htmlContent: _formatHtml(explanationText),
-                                    baseFontSize: 14.5,
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        })(),
-                        const SizedBox(height: 20),
-                      ],
-                    ),
-                  ),
-                  // Small floating proctoring thumbnail so it never pushes the
-                  // question down; IgnorePointer keeps options below tappable.
-                  if (!_isPracticeOrDpp &&
-                      _cameraController != null &&
-                      _cameraController!.value.isInitialized)
-                    Positioned(
-                      right: 12,
-                      bottom: 12,
-                      child: IgnorePointer(
-                        child: Container(
-                          width: 72,
-                          height: 96,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.white70, width: 2),
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.25),
-                                blurRadius: 8,
-                              ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: CameraPreview(_cameraController!),
-                          ),
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            })(),
+                            const SizedBox(height: 20),
+                          ],
                         ),
                       ),
                     ),
-                ],
+                    if (_cameraController != null &&
+                        _cameraController!.value.isInitialized)
+                      _buildFloatingCamera(),
+                  ],
+                ),
               ),
-            ),
-            // Bottom Action Footer
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border(top: BorderSide(color: Colors.grey.shade300)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, -3),
-                  ),
-                ],
-              ),
-              child: SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_isPracticeOrDpp) ...[
-                      // Practice Paper & DPP Action Footer
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          if (!isSubmitted &&
-                              _answers[_currentQuestionIndex] != null)
-                            OutlinedButton.icon(
-                              onPressed: _clearResponse,
-                              icon: const Icon(Icons.refresh_rounded, size: 16),
-                              label: const Text('Clear Response'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF475569),
-                                side: const BorderSide(
-                                  color: Color(0xFFCBD5E1),
+              // Bottom Action Footer
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: Colors.grey.shade300)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, -3),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_isPracticeOrDpp) ...[
+                        // Practice Paper & DPP Action Footer
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            if (!isSubmitted &&
+                                _answers[_currentQuestionIndex] != null)
+                              OutlinedButton.icon(
+                                onPressed: _clearResponse,
+                                icon: const Icon(
+                                  Icons.refresh_rounded,
+                                  size: 16,
                                 ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                            )
-                          else
-                            const SizedBox.shrink(),
-
-                          Row(
-                            children: [
-                              OutlinedButton(
-                                onPressed: _currentQuestionIndex > 0
-                                    ? () => setState(
-                                        () => _currentQuestionIndex--,
-                                      )
-                                    : null,
+                                label: const Text('Clear Response'),
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFF1E293B),
+                                  foregroundColor: const Color(0xFF475569),
+                                  side: const BorderSide(
+                                    color: Color(0xFFCBD5E1),
+                                  ),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 12,
                                     vertical: 8,
@@ -1935,27 +2197,22 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
                                   tapTargetSize:
                                       MaterialTapTargetSize.shrinkWrap,
                                 ),
-                                child: const Text(
-                                  '<< Back',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              if (_currentQuestionIndex < _questions.length - 1)
-                                FilledButton(
-                                  onPressed: () {
-                                    if (!isSubmitted)
-                                      _handleSaveAndNext();
-                                    else
-                                      setState(() => _currentQuestionIndex++);
-                                  },
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: AppTheme.primary,
+                              )
+                            else
+                              const SizedBox.shrink(),
+
+                            Row(
+                              children: [
+                                OutlinedButton(
+                                  onPressed: _currentQuestionIndex > 0
+                                      ? () => setState(
+                                          () => _currentQuestionIndex--,
+                                        )
+                                      : null,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFF1E293B),
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
+                                      horizontal: 12,
                                       vertical: 8,
                                     ),
                                     shape: RoundedRectangleBorder(
@@ -1965,24 +2222,292 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
                                         MaterialTapTargetSize.shrinkWrap,
                                   ),
                                   child: const Text(
-                                    'Save & Next >>',
+                                    '<< Back',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 11,
                                     ),
                                   ),
-                                )
-                              else
+                                ),
+                                const SizedBox(width: 6),
+                                if (_currentQuestionIndex <
+                                    _questions.length - 1)
+                                  FilledButton(
+                                    onPressed: () {
+                                      if (!isSubmitted)
+                                        _handleSaveAndNext();
+                                      else
+                                        setState(() => _currentQuestionIndex++);
+                                    },
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: AppTheme.primary,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 8,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: const Text(
+                                      'Save & Next >>',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  FilledButton(
+                                    onPressed: isSubmitted
+                                        ? () => Navigator.of(context).pop()
+                                        : (_isSubmitting
+                                              ? null
+                                              : _confirmSubmit),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: isSubmitted
+                                          ? AppTheme.primary
+                                          : const Color(0xFF10B981),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: _isSubmitting
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              color: Colors.white,
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : Text(
+                                            isSubmitted
+                                                ? 'Close'
+                                                : 'Submit Practice',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ] else ...[
+                        if (!isSubmitted) ...[
+                          // Compact 4 Action Buttons Row (Fits entire screen width without scrolling)
+                          Row(
+                            children: [
+                              // Save & Next
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _handleSaveAndNext,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF5CB85C),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 9,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: const Text(
+                                    'Save & Next',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 10.5,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+
+                              // Clear
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: _clearResponse,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFF475569),
+                                    side: const BorderSide(
+                                      color: Color(0xFFCBD5E1),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 9,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: const Text(
+                                    'Clear',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 10.5,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+
+                              // Save & Review
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _handleSaveAndMarkReview,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFF0AD4E),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 9,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: const Text(
+                                    'Save & Mark',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 10.5,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+
+                              // Mark & Next
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _handleMarkReviewAndNext,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF337AB7),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 9,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: const Text(
+                                    'Mark & Next',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 10.5,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+
+                        // Row 2: Navigation & Submit
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Back Button
+                            OutlinedButton(
+                              onPressed: _currentQuestionIndex > 0
+                                  ? () =>
+                                        _goToQuestion(_currentQuestionIndex - 1)
+                                  : null,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF1E293B),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: const Text(
+                                '<< Back',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+
+                            Row(
+                              children: [
+                                // Next Button
+                                if (_currentQuestionIndex <
+                                    _questions.length - 1)
+                                  OutlinedButton(
+                                    onPressed: () => _goToQuestion(
+                                      _currentQuestionIndex + 1,
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFF1E293B),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: const Text(
+                                      'Next >>',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                                const SizedBox(width: 6),
+
+                                // Submit Button
                                 FilledButton(
                                   onPressed: isSubmitted
                                       ? () => Navigator.of(context).pop()
-                                      : (_isSubmitting ? null : _submitExam),
+                                      : (_isSubmitting ? null : _confirmSubmit),
                                   style: FilledButton.styleFrom(
                                     backgroundColor: isSubmitted
                                         ? AppTheme.primary
                                         : const Color(0xFF10B981),
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
+                                      horizontal: 14,
                                       vertical: 8,
                                     ),
                                     shape: RoundedRectangleBorder(
@@ -2001,266 +2526,72 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
                                           ),
                                         )
                                       : Text(
-                                          isSubmitted
-                                              ? 'Close'
-                                              : (_isDpp
-                                                    ? 'Submit DPP'
-                                                    : 'Submit Practice'),
+                                          isSubmitted ? 'Close' : 'Submit Test',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 11,
                                           ),
                                         ),
                                 ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ] else ...[
-                      if (!isSubmitted) ...[
-                        // Compact 4 Action Buttons Row (Fits entire screen width without scrolling)
-                        Row(
-                          children: [
-                            // Save & Next
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: _handleSaveAndNext,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF5CB85C),
-                                  foregroundColor: Colors.white,
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 9,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: const Text(
-                                  'Save & Next',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 10.5,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-
-                            // Clear
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: _clearResponse,
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFF475569),
-                                  side: const BorderSide(
-                                    color: Color(0xFFCBD5E1),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 9,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: const Text(
-                                  'Clear',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 10.5,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-
-                            // Save & Review
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: _handleSaveAndMarkReview,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFF0AD4E),
-                                  foregroundColor: Colors.white,
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 9,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: const Text(
-                                  'Save & Mark',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 10.5,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-
-                            // Mark & Next
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: _handleMarkReviewAndNext,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF337AB7),
-                                  foregroundColor: Colors.white,
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 9,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: const Text(
-                                  'Mark & Next',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 10.5,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
+                              ],
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
                       ],
-
-                      // Row 2: Navigation & Submit
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          // Back Button
-                          OutlinedButton(
-                            onPressed: _currentQuestionIndex > 0
-                                ? () => setState(() => _currentQuestionIndex--)
-                                : null,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF1E293B),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: const Text(
-                              '<< Back',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-
-                          Row(
-                            children: [
-                              // Next Button
-                              if (_currentQuestionIndex < _questions.length - 1)
-                                OutlinedButton(
-                                  onPressed: () =>
-                                      setState(() => _currentQuestionIndex++),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFF1E293B),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: const Text(
-                                    'Next >>',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ),
-                              const SizedBox(width: 6),
-
-                              // Submit Button
-                              FilledButton(
-                                onPressed: isSubmitted
-                                    ? () => Navigator.of(context).pop()
-                                    : (_isSubmitting
-                                          ? null
-                                          : _confirmAndSubmit),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: isSubmitted
-                                      ? AppTheme.primary
-                                      : const Color(0xFF10B981),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 8,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: _isSubmitting
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          color: Colors.white,
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : Text(
-                                        isSubmitted ? 'Close' : 'Submit Test',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
                     ],
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  static final Color _notAnsweredColor = Colors.red.shade300;
+  void _goToQuestion(int index) {
+    if (index < 0 || index >= _questions.length) return;
+    setState(() {
+      _currentQuestionIndex = index;
+      _visitedQuestions.add(index);
+    });
+  }
+
+  /// Small camera preview floating above the content; drag to move it.
+  Widget _buildFloatingCamera() {
+    return Positioned(
+      right: _cameraOffset.dx,
+      bottom: _cameraOffset.dy,
+      child: GestureDetector(
+        onPanUpdate: (d) => setState(() {
+          final size = MediaQuery.sizeOf(context);
+          _cameraOffset = Offset(
+            (_cameraOffset.dx - d.delta.dx).clamp(0, size.width - 60),
+            (_cameraOffset.dy - d.delta.dy).clamp(0, size.height * 0.6),
+          );
+        }),
+        child: Container(
+          width: 52,
+          height: 68,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.white, width: 2),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: CameraPreview(_cameraController!),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildQuestionPalette() {
     final Map<String, List<int>> subjectMap = {};
@@ -2283,7 +2614,7 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
                 children: [
                   const Text(
                     'Question Palette',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                   ),
                   const Spacer(),
                   IconButton(
@@ -2301,11 +2632,16 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
                 children: [
                   _buildLegendItem(AppTheme.success, 'Answered'),
                   _buildLegendItem(
+                    Colors.white,
+                    'Not Visited',
+                    textColor: Colors.black87,
+                    outlined: true,
+                  ),
+                  _buildLegendItem(
                     Colors.grey.shade200,
-                    ExamStrings.notVisited,
+                    'Not Answered',
                     textColor: Colors.black87,
                   ),
-                  _buildLegendItem(_notAnsweredColor, 'Not Answered'),
                   _buildLegendItem(Colors.purple, 'Review'),
                   _buildLegendItem(Colors.purple, 'Ans & Review', hasDot: true),
                 ],
@@ -2340,15 +2676,10 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
                           final isMarked = _markedForReview.contains(qIndex);
                           final isCurrent = _currentQuestionIndex == qIndex;
 
-                          Color bgColor = Colors.grey.shade200;
+                          Color bgColor = _visitedQuestions.contains(qIndex)
+                              ? Colors.grey.shade200
+                              : Colors.white;
                           Color textColor = Colors.black87;
-
-                          // Visited but empty gets its own colour so students
-                          // can tell skipped questions from untouched ones.
-                          if (_visited.contains(qIndex) && !isAnswered) {
-                            bgColor = _notAnsweredColor;
-                            textColor = Colors.white;
-                          }
 
                           if (isMarked) {
                             bgColor = Colors.purple;
@@ -2360,7 +2691,10 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
 
                           return GestureDetector(
                             onTap: () {
-                              setState(() => _currentQuestionIndex = qIndex);
+                              setState(() {
+                                _currentQuestionIndex = qIndex;
+                                _visitedQuestions.add(qIndex);
+                              });
                               Navigator.pop(context);
                             },
                             child: Container(
@@ -2373,6 +2707,11 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
                                     ? Border.all(
                                         color: Colors.black,
                                         width: 2.5,
+                                      )
+                                    : bgColor == Colors.white
+                                    ? Border.all(
+                                        color: Colors.grey.shade400,
+                                        width: 1.5,
                                       )
                                     : null,
                               ),
@@ -2422,6 +2761,7 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
     String label, {
     Color textColor = Colors.white,
     bool hasDot = false,
+    bool outlined = false,
   }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -2429,7 +2769,14 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
         Container(
           width: 22,
           height: 22,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            // White on a white drawer needs an outline to be seen.
+            border: outlined
+                ? Border.all(color: Colors.grey.shade500, width: 1.5)
+                : null,
+          ),
           child: hasDot
               ? Stack(
                   alignment: Alignment.center,
@@ -2455,6 +2802,47 @@ class _ExamPlayerScreenState extends State<ExamPlayerScreen>
           label,
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
         ),
+      ],
+    );
+  }
+}
+
+class _ExamTitle extends StatelessWidget {
+  const _ExamTitle({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final i = title.indexOf(':');
+    final hasParts = i > 0 && i < title.length - 1;
+    final main = hasParts ? title.substring(i + 1).trim() : title;
+    final series = hasParts ? title.substring(0, i).trim() : null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          main,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF0F172A),
+          ),
+        ),
+        if (series != null)
+          Text(
+            series,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF64748B),
+            ),
+          ),
       ],
     );
   }

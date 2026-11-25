@@ -16,13 +16,19 @@ class StudentDashboardCubit extends Cubit<StudentDashboardState> {
 
   // This method loads all student dashboard sections from the backend.
   // Even if some APIs fail, the repository keeps the screen usable.
-  Future<void> loadDashboard(String token) async {
-    emit(
-      state.copyWith(
-        status: StudentDashboardStatus.loading,
-        errorMessage: null,
-      ),
-    );
+  //
+  // [silent]: refresh in the background (e.g. back on Home after a test)
+  // without replacing what is on screen by a spinner or an error.
+  Future<void> loadDashboard(String token, {bool silent = false}) async {
+    final keepOnScreen = silent && state.data != null;
+    if (!keepOnScreen) {
+      emit(
+        state.copyWith(
+          status: StudentDashboardStatus.loading,
+          errorMessage: null,
+        ),
+      );
+    }
 
     try {
       final results = await Future.wait([
@@ -34,6 +40,7 @@ class StudentDashboardCubit extends Cubit<StudentDashboardState> {
       final data = results[0] as StudentDashboardData;
       final banners = results[1] as List<BannerModel>;
       final access = results[2] as StudentAccess;
+      if (isClosed) return;
 
       emit(
         state.copyWith(
@@ -45,6 +52,7 @@ class StudentDashboardCubit extends Cubit<StudentDashboardState> {
         ),
       );
     } on ApiException catch (error) {
+      if (keepOnScreen || isClosed) return;
       emit(
         state.copyWith(
           status: StudentDashboardStatus.failure,
@@ -52,6 +60,7 @@ class StudentDashboardCubit extends Cubit<StudentDashboardState> {
         ),
       );
     } catch (_) {
+      if (keepOnScreen || isClosed) return;
       emit(
         state.copyWith(
           status: StudentDashboardStatus.failure,

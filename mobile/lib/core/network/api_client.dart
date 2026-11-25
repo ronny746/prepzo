@@ -26,7 +26,10 @@ class CircuitBreaker {
           DateTime.now().difference(_lastStateChange!) > resetTimeout) {
         state = CircuitState.halfOpen;
       } else {
-        throw ApiException('Service temporarily unavailable due to server instability. Please try again shortly.', statusCode: 503);
+        throw ApiException(
+          'Service temporarily unavailable due to server instability. Please try again shortly.',
+          statusCode: 503,
+        );
       }
     }
 
@@ -62,46 +65,45 @@ class CircuitBreaker {
 
 class ApiClient {
   ApiClient({Dio? dio})
-      : _dio = dio ?? Dio(),
-        _circuitBreaker = CircuitBreaker() {
+    : _dio = dio ?? Dio(),
+      _circuitBreaker = CircuitBreaker() {
     _dio.options = BaseOptions(
       baseUrl: AppConfig.baseUrl,
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 12),
-      sendTimeout: const Duration(seconds: 10),
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 30),
+      sendTimeout: const Duration(seconds: 30),
       headers: const {'Content-Type': 'application/json'},
     );
 
     if (kDebugMode) {
-      _dio.interceptors.add(LogInterceptor(
-        request: true,
-        requestHeader: true,
-        requestBody: true,
-        responseHeader: false,
-        responseBody: true,
-        error: true,
-        logPrint: (object) => debugPrint(object.toString()),
-      ));
+      _dio.interceptors.add(
+        LogInterceptor(
+          request: true,
+          requestHeader: true,
+          requestBody: true,
+          responseHeader: false,
+          responseBody: true,
+          error: true,
+          logPrint: (object) => debugPrint(object.toString()),
+        ),
+      );
     }
   }
 
   final Dio _dio;
   final CircuitBreaker _circuitBreaker;
 
-  /// Called when an authenticated request is rejected with 401 (e.g. the
-  /// account was signed in on another device). Wired by [AuthRepository] so
-  /// every feature gets the same session-expiry handling without each repo
-  /// checking status codes.
-  void Function()? onSessionExpired;
+  /// Called when the server rejects a signed-in request with 401 (token
+  /// expired, or the account signed in on another device). main.dart points
+  /// this at the AuthBloc so the student lands on the login screen with a
+  /// clear message instead of empty, failing screens.
+  static void Function(String message)? onUnauthorized;
 
-  void _notifyIfSessionExpired(DioException error) {
-    // Only requests that carried a bearer token: a 401 on login/OTP calls
-    // just means wrong credentials, not an ended session.
-    final auth = error.requestOptions.headers['Authorization'];
-    if (error.response?.statusCode == 401 && auth != null) {
-      onSessionExpired?.call();
-    }
-  }
+  // A wrong current password is a 401 too, but it must not sign anyone out.
+  static const _noSignOutPaths = [
+    '/auth/change-password',
+    '/auth/developer-mode',
+  ];
 
   Future<Map<String, dynamic>> get(
     String path, {
@@ -117,7 +119,6 @@ class ApiClient {
         );
         return response.data ?? <String, dynamic>{};
       } on DioException catch (error) {
-        _notifyIfSessionExpired(error);
         throw _mapError(error);
       }
     });
@@ -142,7 +143,6 @@ class ApiClient {
             error.response!.data = null;
           }
         }
-        _notifyIfSessionExpired(error);
         throw _mapError(error);
       }
     });
@@ -162,7 +162,6 @@ class ApiClient {
         );
         return response.data ?? <String, dynamic>{};
       } on DioException catch (error) {
-        _notifyIfSessionExpired(error);
         throw _mapError(error);
       }
     });
@@ -182,7 +181,6 @@ class ApiClient {
         );
         return response.data ?? <String, dynamic>{};
       } on DioException catch (error) {
-        _notifyIfSessionExpired(error);
         throw _mapError(error);
       }
     });
@@ -202,7 +200,6 @@ class ApiClient {
         );
         return response.data ?? <String, dynamic>{};
       } on DioException catch (error) {
-        _notifyIfSessionExpired(error);
         throw _mapError(error);
       }
     });
@@ -237,6 +234,7 @@ class ApiClient {
     }
 
     final data = error.response?.data;
+    _reportUnauthorized(error, data);
     if (data is Map<String, dynamic>) {
       final message = data['message']?.toString();
       if (message != null && message.isNotEmpty) {
@@ -247,6 +245,19 @@ class ApiClient {
     return ApiException(
       error.message ?? 'Something went wrong',
       statusCode: error.response?.statusCode,
+    );
+  }
+
+  void _reportUnauthorized(DioException error, Object? data) {
+    if (error.response?.statusCode != 401) return;
+    final options = error.requestOptions;
+    final hadToken = options.headers['Authorization'] != null;
+    if (!hadToken || _noSignOutPaths.any(options.path.startsWith)) return;
+    final message = data is Map ? data['message']?.toString() : null;
+    onUnauthorized?.call(
+      message != null && message.isNotEmpty
+          ? message
+          : 'Your session has expired. Please sign in again.',
     );
   }
 }

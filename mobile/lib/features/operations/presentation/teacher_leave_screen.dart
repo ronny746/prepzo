@@ -101,7 +101,7 @@ class _TeacherLeaveScreenState extends State<TeacherLeaveScreen> {
           children: [
             Text(
               'Your request will be visible to the institute admin for approval.',
-              style: TextStyle(color: Colors.grey.shade700),
+              style: TextStyle(color: AppTheme.inkSoft(context)),
             ),
             const SizedBox(height: 24),
             DropdownButtonFormField<String>(

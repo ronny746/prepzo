@@ -18,6 +18,8 @@ class ProfileRepository {
     return ProfileDetails.fromJson(response);
   }
 
+  /// Uploads an avatar and returns its URL, or null on any failure so the
+  /// profile fields can still be saved; the caller warns about the avatar.
   Future<String?> uploadImage({
     required String token,
     required String filePath,
@@ -60,7 +62,8 @@ class ProfileRepository {
       data: {
         'firstName': firstName.trim(),
         'lastName': lastName.trim(),
-        'email': email.trim(),
+        // Backend rejects empty email; omit the key when blank.
+        if (email.trim().isNotEmpty) 'email': email.trim(),
         'mobile': mobile.trim(),
         'phone': mobile.trim(),
         'gender': (gender ?? '').trim(),
@@ -75,11 +78,15 @@ class ProfileRepository {
           'state': (state ?? '').trim(),
         },
         'metadata': {
+          'gender': (gender ?? '').trim(),
           'studentClass': (studentClass ?? '').trim(),
           'class': (studentClass ?? '').trim(),
           'city': (city ?? '').trim(),
           'state': (state ?? '').trim(),
           'address': (address ?? '').trim(),
+          if (email.trim().isNotEmpty) 'email': email.trim(),
+          'mobile': mobile.trim(),
+          'phone': mobile.trim(),
           'profilePictureUrl': (avatarUrl ?? '').trim(),
           'avatarUrl': (avatarUrl ?? '').trim(),
           'profileImage': (avatarUrl ?? '').trim(),

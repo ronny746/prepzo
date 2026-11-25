@@ -177,6 +177,14 @@ class ExamsRepository {
     return response['data'] ?? {};
   }
 
+  /// The test rules (proctoring, warning limit) without starting the clock.
+  /// Throws on a server that does not have this endpoint yet.
+  Future<Map<String, dynamic>> getExamRules(String token, String examId) async {
+    final response = await _apiClient.get('/exams/$examId/rules', token: token);
+    final data = response['data'];
+    return data is Map ? Map<String, dynamic>.from(data) : {};
+  }
+
   Future<void> saveAnswer(
     String token,
     String examId,

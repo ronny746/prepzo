@@ -17,7 +17,10 @@ class StudentScheduleScreen extends StatelessWidget {
             children: [
               Icon(Icons.calendar_month_rounded, size: 64, color: Colors.grey),
               SizedBox(height: 16),
-              Text('Schedule coming soon', style: TextStyle(color: Colors.grey)),
+              Text(
+                'Schedule coming soon',
+                style: TextStyle(color: Colors.grey),
+              ),
             ],
           ),
         ),

@@ -699,7 +699,7 @@ class _MenuOptionsCard extends StatelessWidget {
               icon: PhosphorIcons.gear,
               iconColor: const Color(0xFF6B7280),
               title: 'Settings & Security',
-              subtitle: 'App theme, notifications & password',
+              subtitle: 'Notifications, session & logout',
               onTap: () {
                 Navigator.pushNamed(context, AppRoutes.settings);
               },

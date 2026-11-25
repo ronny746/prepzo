@@ -35,15 +35,23 @@ class ExtrasRepository {
     return [];
   }
 
-  Future<void> bookPtmSlot(String token, String slotId, Map<String, dynamic> data) async {
-    await _apiClient.post('/ptm-booking/book', token: token, data: {
-      'slotId': slotId,
-      ...data,
-    });
+  Future<void> bookPtmSlot(
+    String token,
+    String slotId,
+    Map<String, dynamic> data,
+  ) async {
+    await _apiClient.post(
+      '/ptm-booking/book',
+      token: token,
+      data: {'slotId': slotId, ...data},
+    );
   }
 
   Future<List<Map<String, dynamic>>> getPtmBookings(String token) async {
-    final response = await _apiClient.get('/ptm-booking/bookings', token: token);
+    final response = await _apiClient.get(
+      '/ptm-booking/bookings',
+      token: token,
+    );
     final data = response['data'] ?? [];
     if (data is List) {
       return List<Map<String, dynamic>>.from(data);
@@ -52,7 +60,10 @@ class ExtrasRepository {
   }
 
   Future<List<FeeModel>> getFees(String token) async {
-    final response = await _apiClient.get('/fees-payments/my-children', token: token);
+    final response = await _apiClient.get(
+      '/fees-payments/my-children',
+      token: token,
+    );
     final data = response['data'] ?? [];
     if (data is List) {
       return data.map((e) => FeeModel.fromJson(e)).toList();
@@ -60,12 +71,17 @@ class ExtrasRepository {
     return [];
   }
 
-  Future<void> payFee(String token, String feeId, num amount, String method) async {
-    await _apiClient.post('/fees-payments/pay', token: token, data: {
-      'feeId': feeId,
-      'amount': amount,
-      'paymentMethod': method,
-    });
+  Future<void> payFee(
+    String token,
+    String feeId,
+    num amount,
+    String method,
+  ) async {
+    await _apiClient.post(
+      '/fees-payments/pay',
+      token: token,
+      data: {'feeId': feeId, 'amount': amount, 'paymentMethod': method},
+    );
   }
 
   /// PDF receipt for a successful payment (same file the web portal serves).
@@ -78,14 +94,21 @@ class ExtrasRepository {
 
   Future<List<TransactionModel>> getTransactions(String token) async {
     try {
-      final response = await _apiClient.get('/fees-payments/transactions', token: token);
+      final response = await _apiClient.get(
+        '/fees-payments/transactions',
+        token: token,
+      );
       final data = response['data'] ?? [];
       if (data is List) {
-        final rawList = data.map((e) => TransactionModel.fromJson(Map<String, dynamic>.from(e))).toList();
+        final rawList = data
+            .map((e) => TransactionModel.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
         final seen = <String>{};
         final uniqueList = <TransactionModel>[];
         for (var item in rawList) {
-          final key = item.transactionId.isNotEmpty ? item.transactionId : item.id;
+          final key = item.transactionId.isNotEmpty
+              ? item.transactionId
+              : item.id;
           if (key.isEmpty || !seen.contains(key)) {
             if (key.isNotEmpty) seen.add(key);
             uniqueList.add(item);
@@ -95,14 +118,23 @@ class ExtrasRepository {
       }
     } catch (_) {
       try {
-        final fallbackRes = await _apiClient.get('/fees-payments/records', token: token);
+        final fallbackRes = await _apiClient.get(
+          '/fees-payments/records',
+          token: token,
+        );
         final data = fallbackRes['data'] ?? [];
         if (data is List) {
-          final rawList = data.map((e) => TransactionModel.fromJson(Map<String, dynamic>.from(e))).toList();
+          final rawList = data
+              .map(
+                (e) => TransactionModel.fromJson(Map<String, dynamic>.from(e)),
+              )
+              .toList();
           final seen = <String>{};
           final uniqueList = <TransactionModel>[];
           for (var item in rawList) {
-            final key = item.transactionId.isNotEmpty ? item.transactionId : item.id;
+            final key = item.transactionId.isNotEmpty
+                ? item.transactionId
+                : item.id;
             if (key.isEmpty || !seen.contains(key)) {
               if (key.isNotEmpty) seen.add(key);
               uniqueList.add(item);

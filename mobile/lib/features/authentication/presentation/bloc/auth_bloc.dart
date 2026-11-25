@@ -2,9 +2,8 @@ import 'dart:async';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:lms/core/constants/app_strings.dart';
-import 'package:lms/core/network/api_exception.dart';
 import 'package:lms/core/services/deep_link_service.dart';
+import 'package:lms/core/network/api_exception.dart';
 import 'package:lms/features/authentication/data/models/auth_session.dart';
 import 'package:lms/features/authentication/data/repositories/auth_repository.dart';
 
@@ -12,47 +11,35 @@ part 'auth_event.dart';
 part 'auth_state.dart';
 
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
-  AuthBloc({required AuthRepository authRepository})
-    : _authRepository = authRepository,
-      super(
-        AuthState(recentInstituteIds: authRepository.getRecentInstituteIds()),
-      ) {
+  AuthBloc({
+    required AuthRepository authRepository,
+    Future<void> Function(String? accessToken)? onSignOut,
+  }) : _authRepository = authRepository,
+       _onSignOut = onSignOut,
+       super(
+         AuthState(recentInstituteIds: authRepository.getRecentInstituteIds()),
+       ) {
     on<AuthStarted>(_onStarted);
     on<AuthLoginRequested>(_onLoginRequested);
     on<AuthOtpRequested>(_onOtpRequested);
     on<AuthOtpVerifyRequested>(_onOtpVerifyRequested);
     on<AuthLogoutRequested>(_onLogoutRequested);
     on<AuthSessionExpired>(_onSessionExpired);
-    _sessionExpiredSub = authRepository.sessionExpired.listen(
-      (_) => add(const AuthSessionExpired()),
-    );
   }
 
   final AuthRepository _authRepository;
-  late final StreamSubscription<void> _sessionExpiredSub;
+  final Future<void> Function(String? accessToken)? _onSignOut;
+  // Several requests can fail with 401 at once; sign out only once.
+  bool _signingOut = false;
 
-  @override
-  Future<void> close() {
-    _sessionExpiredSub.cancel();
-    return super.close();
-  }
-
-  Future<void> _onSessionExpired(
-    AuthSessionExpired event,
-    Emitter<AuthState> emit,
-  ) async {
-    // Several in-flight requests can fail together; only react once.
-    if (state.status != AuthStatus.authenticated) return;
-    DeepLinkService.markNotReady();
-    await _authRepository.logout();
-    emit(
-      state.copyWith(
-        status: AuthStatus.unauthenticated,
-        clearSession: true,
-        resetOtp: true,
-        errorMessage: AppStrings.sessionExpired,
-      ),
-    );
+  // Runs before the saved session is cleared, so the old token is still
+  // available (e.g. to unregister this phone for push notifications).
+  Future<void> _beforeSignOut() async {
+    try {
+      await _onSignOut?.call(state.session?.accessToken);
+    } catch (_) {
+      // Never block signing out.
+    }
   }
 
   Future<void> _onStarted(AuthStarted event, Emitter<AuthState> emit) async {
@@ -216,17 +203,38 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
   }
 
+  Future<void> _onSessionExpired(
+    AuthSessionExpired event,
+    Emitter<AuthState> emit,
+  ) async {
+    // Only a signed-in app needs this; startup handles its own 401, and
+    // several failing requests at once must sign out just once.
+    if (state.status != AuthStatus.authenticated || _signingOut) return;
+    _signingOut = true;
+    try {
+      await _beforeSignOut();
+      DeepLinkService.markNotReady();
+      await _authRepository.logout();
+    } finally {
+      _signingOut = false;
+    }
+    emit(
+      state.copyWith(
+        status: AuthStatus.unauthenticated,
+        clearSession: true,
+        resetOtp: true,
+        errorMessage: event.message,
+        recentInstituteIds: _authRepository.getRecentInstituteIds(),
+      ),
+    );
+  }
+
   Future<void> _onLogoutRequested(
     AuthLogoutRequested event,
     Emitter<AuthState> emit,
   ) async {
-    try {
-      DeepLinkService.markNotReady();
-      await _authRepository.logout();
-    } catch (_) {
-      // Ignore: state below must still flip to unauthenticated so the user can
-      // always leave a broken session.
-    }
+    await _beforeSignOut();
+    await _authRepository.logout();
     emit(
       state.copyWith(
         status: AuthStatus.unauthenticated,

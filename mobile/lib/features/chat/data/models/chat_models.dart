@@ -20,7 +20,8 @@ class ChatRoom {
       id: json['_id'] ?? json['id'] ?? '',
       name: json['name'] ?? '',
       type: json['type'] ?? 'direct',
-      participants: (json['participants'] as List?)
+      participants:
+          (json['participants'] as List?)
               ?.map((e) => ChatParticipant.fromJson(e))
               .toList() ??
           [],

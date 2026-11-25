@@ -38,8 +38,8 @@ class AcademicsState extends Equatable {
 
 class AcademicsCubit extends Cubit<AcademicsState> {
   AcademicsCubit({required AcademicsRepository academicsRepository})
-      : _academicsRepository = academicsRepository,
-        super(const AcademicsState());
+    : _academicsRepository = academicsRepository,
+      super(const AcademicsState());
 
   final AcademicsRepository _academicsRepository;
 
@@ -50,10 +50,7 @@ class AcademicsCubit extends Cubit<AcademicsState> {
       emit(state.copyWith(status: AcademicsStatus.success, tasks: tasks));
     } catch (e) {
       emit(
-        state.copyWith(
-          status: AcademicsStatus.failure,
-          error: e.toString(),
-        ),
+        state.copyWith(status: AcademicsStatus.failure, error: e.toString()),
       );
     }
   }

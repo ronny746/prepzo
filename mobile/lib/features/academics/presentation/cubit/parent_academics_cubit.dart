@@ -4,8 +4,8 @@ import 'package:lms/features/academics/data/repositories/academics_repository.da
 
 class ParentAcademicsCubit extends Cubit<AcademicsState> {
   ParentAcademicsCubit({required AcademicsRepository academicsRepository})
-      : _academicsRepository = academicsRepository,
-        super(const AcademicsState());
+    : _academicsRepository = academicsRepository,
+      super(const AcademicsState());
 
   final AcademicsRepository _academicsRepository;
 
@@ -16,10 +16,7 @@ class ParentAcademicsCubit extends Cubit<AcademicsState> {
       emit(state.copyWith(status: AcademicsStatus.success, tasks: tasks));
     } catch (e) {
       emit(
-        state.copyWith(
-          status: AcademicsStatus.failure,
-          error: e.toString(),
-        ),
+        state.copyWith(status: AcademicsStatus.failure, error: e.toString()),
       );
     }
   }

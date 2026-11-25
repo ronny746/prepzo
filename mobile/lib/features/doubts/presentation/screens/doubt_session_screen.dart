@@ -8,6 +8,7 @@ import 'package:lms/core/theme/app_theme.dart';
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:lms/features/doubts/data/models/doubt_models.dart';
 import 'package:lms/features/doubts/data/repositories/doubts_repository.dart';
+import 'package:lms/routes/app_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 class DoubtSessionScreen extends StatefulWidget {
@@ -69,6 +70,16 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
     return context.read<AuthBloc>().state.session?.user.id ?? '';
   }
 
+  List<TeacherModel> _getAvailableTeachers() {
+    if (_selectedBatchId == null) return _teachers;
+    final batch = _batches.firstWhere(
+      (b) => b.id == _selectedBatchId,
+      orElse: () => DoubtBatchModel(id: '', name: '', section: ''),
+    );
+    if (batch.teachers.isNotEmpty) return batch.teachers;
+    return _teachers;
+  }
+
   Future<void> _loadInitialData() async {
     setState(() => _isLoadingData = true);
     final token = _getToken();
@@ -82,8 +93,11 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
         _teachers = teachers;
         if (_batches.isNotEmpty) {
           _selectedBatchId = _batches.first.id;
-        }
-        if (_teachers.isNotEmpty) {
+          final avail = _getAvailableTeachers();
+          if (avail.isNotEmpty) {
+            _selectedTeacherId = avail.first.id;
+          }
+        } else if (_teachers.isNotEmpty) {
           _selectedTeacherId = _teachers.first.id;
         }
         _isLoadingData = false;
@@ -261,12 +275,32 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
     );
   }
 
+  // Doubts can only be sent to a teacher (the server requires teacherId), so
+  // without one the student is sent to Help & Support instead of a dead end.
+  void _openSupport() {
+    if (!mounted) return;
+    Navigator.pushNamed(context, AppRoutes.support);
+  }
+
   void _submitDoubt() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedBatchId == null || _selectedBatchId!.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Please select a batch')));
+      return;
+    }
+    final availTeachers = _getAvailableTeachers();
+    if (availTeachers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'No teacher is assigned to your batch yet. Contact the Prepzo team '
+            'and we will help with your doubt.',
+          ),
+          action: SnackBarAction(label: 'Contact', onPressed: _openSupport),
+        ),
+      );
       return;
     }
     if (_selectedTeacherId == null || _selectedTeacherId!.isEmpty) {
@@ -333,11 +367,11 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
+      backgroundColor: AppTheme.page(context),
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF111827),
+        backgroundColor: AppTheme.card(context),
+        foregroundColor: AppTheme.ink(context),
         title: const Text(
           'Doubt Sessions & Portal',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
@@ -369,6 +403,68 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
   }
 
   Widget _buildAskDoubtTab() {
+    if (_batches.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const PhosphorIcon(
+                  PhosphorIcons.chalkboardTeacher,
+                  size: 48,
+                  color: AppTheme.primary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'No Enrolled Batches Found',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'You must be enrolled in an active course batch to ask questions and receive answers from teachers.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF64748B),
+                  height: 1.4,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pushReplacementNamed(context, AppRoutes.courses);
+                },
+                icon: const PhosphorIcon(PhosphorIcons.books, size: 18),
+                label: const Text('Explore Courses'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final availTeachers = _getAvailableTeachers();
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Form(
@@ -421,21 +517,21 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
             const SizedBox(height: 20),
 
             // Batch Selection Dropdown
-            const Text(
+            Text(
               'Select Batch',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
-                color: Color(0xFF374151),
+                color: AppTheme.inkSoft(context),
               ),
             ),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppTheme.card(context),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
+                border: Border.all(color: AppTheme.line(context)),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
@@ -459,7 +555,15 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
                   }).toList(),
                   onChanged: (val) {
                     if (val != null) {
-                      setState(() => _selectedBatchId = val);
+                      setState(() {
+                        _selectedBatchId = val;
+                        final avail = _getAvailableTeachers();
+                        if (avail.isNotEmpty) {
+                          _selectedTeacherId = avail.first.id;
+                        } else {
+                          _selectedTeacherId = null;
+                        }
+                      });
                       _fetchDoubts();
                     }
                   },
@@ -469,54 +573,115 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
             const SizedBox(height: 16),
 
             // Teacher Selection Dropdown
-            const Text(
+            Text(
               'Select Teacher',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
-                color: Color(0xFF374151),
+                color: AppTheme.inkSoft(context),
               ),
             ),
             const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedTeacherId,
-                  isExpanded: true,
-                  hint: const Text('Select Teacher'),
-                  items: _teachers.map((t) {
-                    return DropdownMenuItem(
-                      value: t.id,
-                      child: Text(
-                        t.name,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+            if (availTeachers.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        PhosphorIcon(
+                          PhosphorIcons.info,
+                          size: 18,
+                          color: Color(0xFFD97706),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'No teacher is assigned to this batch yet, so '
+                            'doubts cannot be sent here. Call, WhatsApp or '
+                            'email the Prepzo team and we will help you.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _openSupport,
+                        icon: const PhosphorIcon(
+                          PhosphorIcons.headset,
+                          size: 16,
+                          color: Color(0xFF92400E),
+                        ),
+                        label: const Text(
+                          'Contact support',
+                          style: TextStyle(
+                            color: Color(0xFF92400E),
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => _selectedTeacherId = val);
-                  },
+                    ),
+                  ],
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: AppTheme.card(context),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppTheme.line(context)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: availTeachers.any((t) => t.id == _selectedTeacherId)
+                        ? _selectedTeacherId
+                        : (availTeachers.isNotEmpty
+                              ? availTeachers.first.id
+                              : null),
+                    isExpanded: true,
+                    hint: const Text('Select Teacher'),
+                    items: availTeachers.map((t) {
+                      return DropdownMenuItem(
+                        value: t.id,
+                        child: Text(
+                          t.name,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => _selectedTeacherId = val);
+                    },
+                  ),
                 ),
               ),
-            ),
             const SizedBox(height: 16),
 
             // Question Details Input
-            const Text(
+            Text(
               'Question / Description',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
-                color: Color(0xFF374151),
+                color: AppTheme.inkSoft(context),
               ),
             ),
             const SizedBox(height: 8),
@@ -530,27 +695,27 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
                 hintText:
                     'Describe your doubt in detail or type question text...',
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: AppTheme.card(context),
                 contentPadding: const EdgeInsets.all(16),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  borderSide: BorderSide(color: AppTheme.line(context)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  borderSide: BorderSide(color: AppTheme.line(context)),
                 ),
               ),
             ),
             const SizedBox(height: 16),
 
             // Attachment Card
-            const Text(
+            Text(
               'Attach Image / Photo',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
-                color: Color(0xFF374151),
+                color: AppTheme.inkSoft(context),
               ),
             ),
             const SizedBox(height: 8),
@@ -558,7 +723,7 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppTheme.card(context),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
                     color: AppTheme.primary.withValues(alpha: 0.4),
@@ -656,9 +821,9 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
                 child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppTheme.card(context),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                    border: Border.all(color: AppTheme.line(context)),
                   ),
                   child: const Row(
                     children: [
@@ -757,7 +922,7 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
       children: [
         // Controls Header (Tabs, Filters, Search)
         Container(
-          color: Colors.white,
+          color: AppTheme.card(context),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Column(
             children: [
@@ -767,7 +932,7 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
                     child: Container(
                       padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF3F4F6),
+                        color: AppTheme.soft(context),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
@@ -907,14 +1072,14 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
                   ),
                   contentPadding: const EdgeInsets.symmetric(vertical: 10),
                   filled: true,
-                  fillColor: const Color(0xFFF9FAFB),
+                  fillColor: AppTheme.soft(context),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    borderSide: BorderSide(color: AppTheme.line(context)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    borderSide: BorderSide(color: AppTheme.line(context)),
                   ),
                 ),
               ),
@@ -939,12 +1104,12 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
                         color: Colors.grey.shade400,
                       ),
                       const SizedBox(height: 12),
-                      const Text(
+                      Text(
                         'No doubts found',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
-                          color: Color(0xFF111827),
+                          color: AppTheme.ink(context),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -972,9 +1137,9 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
                       return Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: AppTheme.card(context),
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                          border: Border.all(color: AppTheme.line(context)),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.02),
@@ -990,47 +1155,55 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Row(
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 16,
-                                      backgroundColor: AppTheme.primary
-                                          .withValues(alpha: 0.1),
-                                      child: Text(
-                                        doubt.studentName.isNotEmpty
-                                            ? doubt.studentName[0].toUpperCase()
-                                            : 'S',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: AppTheme.primary,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          doubt.studentName,
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: AppTheme.primary
+                                            .withValues(alpha: 0.1),
+                                        child: Text(
+                                          doubt.studentName.isNotEmpty
+                                              ? doubt.studentName[0]
+                                                    .toUpperCase()
+                                              : 'S',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.bold,
+                                            color: AppTheme.primary,
                                             fontSize: 13,
-                                            color: Color(0xFF111827),
                                           ),
                                         ),
-                                        Text(
-                                          dateStr,
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey,
-                                          ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              doubt.studentName,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                                color: AppTheme.ink(context),
+                                              ),
+                                            ),
+                                            Text(
+                                              dateStr,
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
-                                  ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
+                                const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 10,
@@ -1062,9 +1235,9 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
                               cleanQuestion.isNotEmpty
                                   ? cleanQuestion
                                   : doubt.question,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14,
-                                color: Color(0xFF1F2937),
+                                color: AppTheme.ink(context),
                                 height: 1.4,
                               ),
                             ),
@@ -1152,12 +1325,16 @@ class _DoubtSessionScreenState extends State<DoubtSessionScreen>
                                           size: 16,
                                         ),
                                         const SizedBox(width: 6),
-                                        Text(
-                                          'Solution by ${doubt.teacherName}',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.green.shade900,
+                                        Expanded(
+                                          child: Text(
+                                            'Solution by ${doubt.teacherName}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.green.shade900,
+                                            ),
                                           ),
                                         ),
                                       ],

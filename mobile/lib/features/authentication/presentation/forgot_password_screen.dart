@@ -84,7 +84,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               controller: _phoneController,
               labelText: 'Mobile Number',
               keyboardType: TextInputType.phone,
-              prefixIcon: const Icon(Icons.phone_iphone_rounded, color: Colors.white60),
+              prefixIcon: const Icon(
+                Icons.phone_iphone_rounded,
+                color: Colors.white60,
+              ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
                   return 'Please enter your mobile number';
@@ -96,10 +99,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               },
             ),
             const SizedBox(height: 24),
-            AuthButton(
-              text: 'Send OTP',
-              onPressed: _sendOtp,
-            ),
+            AuthButton(text: 'Send OTP', onPressed: _sendOtp),
           ],
         ),
       ),

@@ -3,9 +3,10 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lms/l10n/app_localizations.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
-import 'package:lms/core/navigation/app_route_observer.dart';
+import 'package:lms/core/services/student_data_refresh.dart';
 import 'package:lms/core/network/api_client.dart';
 import 'package:lms/core/network/app_bloc_observer.dart';
 import 'package:lms/core/storage/session_storage.dart';
@@ -38,6 +39,9 @@ Future<void> main() async {
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   // Firebase (Crashlytics/FCM/Analytics) is removed until a google-services.json
   // for com.app.prepzo exists; originals are in .firebase_backup/.
+  // First screens (splash/login) are dark. Each screen then sets its own
+  // style through AnnotatedRegion / AppBarTheme (see AppTheme).
+  SystemChrome.setSystemUIOverlayStyle(AppTheme.darkScreenSystemUi);
 
   // Set the global Bloc observer for debugging transitions and errors
   Bloc.observer = AppBlocObserver();
@@ -82,6 +86,8 @@ Future<void> main() async {
   );
 }
 
+// Used to send the student to the login screen from outside any widget when
+// the server ends the session, and to tell them why.
 final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<ScaffoldMessengerState> _messengerKey =
     GlobalKey<ScaffoldMessengerState>();
@@ -134,7 +140,19 @@ class LmsApp extends StatelessWidget {
       ],
       child: MultiBlocProvider(
         providers: [
-          BlocProvider(create: (_) => AuthBloc(authRepository: authRepository)),
+          BlocProvider(
+            create: (_) {
+              final bloc = AuthBloc(
+                authRepository: authRepository,
+                // Stop this phone getting the old student's notifications.
+                onSignOut: pushNotificationService.stopForSession,
+              );
+              ApiClient.onUnauthorized = (message) {
+                if (!bloc.isClosed) bloc.add(AuthSessionExpired(message));
+              };
+              return bloc;
+            },
+          ),
           BlocProvider(
             create: (_) => ExtrasCubit(extrasRepository: extrasRepository),
           ),
@@ -173,11 +191,25 @@ class LmsApp extends StatelessWidget {
             }
           },
           child: BlocListener<AuthBloc, AuthState>(
+            // Server ended a live session (token expired / other device):
+            // go to login and say why. A normal logout carries no message
+            // and its screen navigates by itself.
+            listenWhen: (prev, curr) =>
+                prev.status == AuthStatus.authenticated &&
+                curr.status == AuthStatus.unauthenticated &&
+                curr.errorMessage != null,
             listener: (_, state) {
-              if (state.status == AuthStatus.authenticated &&
-                  state.session != null) {
-                pushNotificationService.startForSession(state.session!);
-              }
+              _navigatorKey.currentState?.pushNamedAndRemoveUntil(
+                AppRoutes.login,
+                (route) => false,
+              );
+              _messengerKey.currentState?.showSnackBar(
+                SnackBar(
+                  content: Text(state.errorMessage!),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 5),
+                ),
+              );
             },
             child: ScreenUtilPlusInit(
               designSize: const Size(
@@ -195,28 +227,29 @@ class LmsApp extends StatelessWidget {
                     theme: AppTheme.lightTheme,
                     darkTheme: AppTheme.darkTheme,
                     themeMode: themeMode,
-                    initialRoute: AppRoutes.splash,
                     navigatorKey: _navigatorKey,
-                    scaffoldMessengerKey: _messengerKey,
                     navigatorObservers: [appRouteObserver],
+                    scaffoldMessengerKey: _messengerKey,
+                    initialRoute: AppRoutes.splash,
                     onGenerateRoute: AppRouter.onGenerateRoute,
-                    // App-wide default: the app's screens are light, so use dark
-                    // status-bar icons. Dark screens (login/splash) override this
-                    // with their own AnnotatedRegion.
-                    builder: (context, child) =>
-                        AnnotatedRegion<SystemUiOverlayStyle>(
-                          value: const SystemUiOverlayStyle(
-                            statusBarColor: Colors.transparent,
-                            statusBarIconBrightness: Brightness.dark,
-                            statusBarBrightness: Brightness.light,
-                          ),
-                          child: MediaQuery(
-                            data: MediaQuery.of(context).copyWith(
-                              textScaler: const TextScaler.linear(1.0),
-                            ),
-                            child: child ?? const SizedBox.shrink(),
-                          ),
-                        ),
+                    // Locale strings come from lib/l10n/*.arb (see docs/engineering-standards.md#i18n).
+                    localizationsDelegates:
+                        AppLocalizations.localizationsDelegates,
+                    supportedLocales: AppLocalizations.supportedLocales,
+                    builder: (context, child) => MediaQuery(
+                      data: MediaQuery.of(
+                        context,
+                      ).copyWith(textScaler: const TextScaler.linear(1.0)),
+                      // Default: cream screens get dark status-bar icons.
+                      // Dark screens (login, splash) override this with
+                      // their own AnnotatedRegion further down the tree.
+                      child: AnnotatedRegion<SystemUiOverlayStyle>(
+                        value: Theme.of(context).brightness == Brightness.dark
+                            ? AppTheme.darkScreenSystemUi
+                            : AppTheme.lightScreenSystemUi,
+                        child: child ?? const SizedBox.shrink(),
+                      ),
+                    ),
                   ),
                 );
               },

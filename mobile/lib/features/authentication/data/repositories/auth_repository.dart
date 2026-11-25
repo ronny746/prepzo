@@ -1,5 +1,4 @@
-import 'dart:async';
-
+import 'package:flutter/foundation.dart';
 import 'package:lms/core/network/api_client.dart';
 import 'package:lms/core/network/api_exception.dart';
 import 'package:lms/core/storage/session_storage.dart';
@@ -10,14 +9,7 @@ class AuthRepository {
     required ApiClient apiClient,
     required SessionStorage sessionStorage,
   }) : _apiClient = apiClient,
-       _sessionStorage = sessionStorage {
-    apiClient.onSessionExpired = () => _sessionExpired.add(null);
-  }
-
-  final _sessionExpired = StreamController<void>.broadcast();
-
-  /// Emits when any authenticated API call comes back 401.
-  Stream<void> get sessionExpired => _sessionExpired.stream;
+       _sessionStorage = sessionStorage;
 
   final ApiClient _apiClient;
   final SessionStorage _sessionStorage;
@@ -31,6 +23,13 @@ class AuthRepository {
     final userJson = _sessionStorage.getStoredUser();
 
     if (accessToken == null || accessToken.isEmpty || userJson == null) {
+      return null;
+    }
+
+    // Why: older builds had a demo login that stored a fake `mock-` token.
+    // Purge it on upgrade so those devices go back to the real login screen.
+    if (accessToken.startsWith('mock-')) {
+      await _sessionStorage.clearSession();
       return null;
     }
 
@@ -106,7 +105,9 @@ class AuthRepository {
   }
 
   Future<UserIdentity> getMe(String token) async {
-    final response = await _apiClient.get('/me', token: token);
+    // /users/me is the full profile; there is no /api/v1/me (it was a 404, so
+    // the saved session was never re-checked on start-up).
+    final response = await _apiClient.get('/users/me', token: token);
     final data = response['data'];
     final user = response['user'];
 
@@ -131,11 +132,12 @@ class AuthRepository {
     }
 
     try {
-      final me = await getMe(
-        stored.accessToken,
-      ).timeout(const Duration(milliseconds: 1500));
+      final me = await getMe(stored.accessToken);
+      // Swap in a fresh 30-day token so an active student is never signed
+      // out; keep the old one if the refresh call fails.
+      final freshToken = await _refreshToken(stored.accessToken);
       final session = AuthSession(
-        accessToken: stored.accessToken,
+        accessToken: freshToken ?? stored.accessToken,
         refreshToken: stored.refreshToken,
         user: me,
       );
@@ -147,9 +149,29 @@ class AuthRepository {
       );
 
       return session;
-    } catch (e) {
-      // If network is slow, times out, or offline, immediately fallback to stored session
+    } on ApiException catch (e) {
+      // 401: token expired or the account signed in elsewhere. The caller
+      // signs out; carrying on would leave every screen failing.
+      if (e.statusCode == 401) rethrow;
+      debugPrint('Warning: Session refresh /me failed: $e');
       return stored;
+    } catch (e) {
+      // Offline or server trouble: keep the stored session.
+      debugPrint('Warning: Session refresh /me failed: $e');
+      return stored;
+    }
+  }
+
+  Future<String?> _refreshToken(String token) async {
+    try {
+      final response = await _apiClient.post('/auth/refresh', token: token);
+      final data = response['data'];
+      final fresh = data is Map ? data['token']?.toString() : null;
+      return fresh != null && fresh.isNotEmpty ? fresh : null;
+    } catch (e) {
+      // Older servers have no /auth/refresh; the current token still works.
+      debugPrint('Token refresh skipped: $e');
+      return null;
     }
   }
 
@@ -244,6 +266,18 @@ class AuthRepository {
     );
 
     return session;
+  }
+
+  Future<void> changePassword({
+    required String token,
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    await _apiClient.post(
+      '/auth/change-password',
+      token: token,
+      data: {'oldPassword': oldPassword, 'newPassword': newPassword},
+    );
   }
 
   Future<void> logout() async {

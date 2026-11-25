@@ -25,7 +25,8 @@ class StudentScheduleScreen extends StatelessWidget {
             title: 'My Schedule',
             showAppBar: true,
             onRefresh: () async {
-              final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
+              final token =
+                  context.read<AuthBloc>().state.session?.accessToken ?? '';
               await context.read<StudentDashboardCubit>().loadDashboard(token);
             },
             body: BlocBuilder<StudentDashboardCubit, StudentDashboardState>(
@@ -44,9 +45,16 @@ class StudentScheduleScreen extends StatelessWidget {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.calendar_today_outlined, size: 60, color: Colors.grey),
+                        Icon(
+                          Icons.calendar_today_outlined,
+                          size: 60,
+                          color: Colors.grey,
+                        ),
                         SizedBox(height: 16),
-                        Text('No schedule found for this week.', style: TextStyle(color: Colors.grey)),
+                        Text(
+                          'No schedule found for this week.',
+                          style: TextStyle(color: Colors.grey),
+                        ),
                       ],
                     ),
                   );
@@ -72,29 +80,56 @@ class StudentScheduleScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 8.0,
+                            horizontal: 4.0,
+                          ),
                           child: Text(
                             day,
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                          ),
-                        ),
-                        ...items.map((s) => SectionCard(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: ListTile(
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              leading: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(color: AppTheme.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-                                child: const Icon(Icons.access_time_rounded, color: AppTheme.primary, size: 18),
-                              ),
-                              title: Text(s.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                              subtitle: Text('${s.subtitle}${s.value != null && s.value!.isNotEmpty ? ' • ${s.value}' : ''}', style: const TextStyle(fontSize: 12)),
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.primary,
                             ),
                           ),
-                        )),
+                        ),
+                        ...items.map(
+                          (s) => SectionCard(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primary.withValues(
+                                      alpha: 0.1,
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(
+                                    Icons.access_time_rounded,
+                                    color: AppTheme.primary,
+                                    size: 18,
+                                  ),
+                                ),
+                                title: Text(
+                                  s.title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  '${s.subtitle}${s.value != null && s.value!.isNotEmpty ? ' • ${s.value}' : ''}',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 16),
                       ],
                     );

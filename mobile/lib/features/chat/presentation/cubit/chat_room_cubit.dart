@@ -34,8 +34,8 @@ class ChatRoomState extends Equatable {
 
 class ChatRoomCubit extends Cubit<ChatRoomState> {
   ChatRoomCubit({required ChatRepository chatRepository})
-      : _chatRepository = chatRepository,
-        super(const ChatRoomState());
+    : _chatRepository = chatRepository,
+      super(const ChatRoomState());
 
   final ChatRepository _chatRepository;
 
@@ -51,8 +51,13 @@ class ChatRoomCubit extends Cubit<ChatRoomState> {
 
   Future<void> sendMessage(String token, String roomId, String content) async {
     try {
-      final newMessage = await _chatRepository.sendMessage(token, roomId, content);
-      final updatedMessages = List<ChatMessage>.from(state.messages)..add(newMessage);
+      final newMessage = await _chatRepository.sendMessage(
+        token,
+        roomId,
+        content,
+      );
+      final updatedMessages = List<ChatMessage>.from(state.messages)
+        ..add(newMessage);
       emit(state.copyWith(messages: updatedMessages));
     } catch (e) {
       emit(state.copyWith(status: ChatRoomStatus.failure, error: e.toString()));

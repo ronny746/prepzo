@@ -22,9 +22,13 @@ class _AcademicsScreenState extends State<AcademicsScreen> {
     context.read<AcademicsCubit>().loadTasks(token);
   }
 
-  void _openSubmitDialog(BuildContext context, AcademicTask task, String token) {
+  void _openSubmitDialog(
+    BuildContext context,
+    AcademicTask task,
+    String token,
+  ) {
     final contentController = TextEditingController();
-    
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -33,7 +37,10 @@ class _AcademicsScreenState extends State<AcademicsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(task.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              task.title,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             Text(task.description),
             const SizedBox(height: 16),
@@ -54,18 +61,24 @@ class _AcademicsScreenState extends State<AcademicsScreen> {
           ),
           FilledButton(
             onPressed: () {
-              context.read<AcademicsCubit>().submitTask(
-                token: token,
-                taskId: task.id,
-                taskType: task.taskType,
-                content: contentController.text,
-              ).then((_) {
-                if (ctx.mounted) Navigator.pop(ctx);
-              }).catchError((e) {
-                if (ctx.mounted) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.toString())));
-                }
-              });
+              context
+                  .read<AcademicsCubit>()
+                  .submitTask(
+                    token: token,
+                    taskId: task.id,
+                    taskType: task.taskType,
+                    content: contentController.text,
+                  )
+                  .then((_) {
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  })
+                  .catchError((e) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(
+                        ctx,
+                      ).showSnackBar(SnackBar(content: Text(e.toString())));
+                    }
+                  });
             },
             child: const Text('Submit'),
           ),
@@ -77,7 +90,7 @@ class _AcademicsScreenState extends State<AcademicsScreen> {
   @override
   Widget build(BuildContext context) {
     final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
-    
+
     return BlocBuilder<AcademicsCubit, AcademicsState>(
       builder: (context, state) {
         if (state.status == AcademicsStatus.loading && state.tasks.isEmpty) {
@@ -95,34 +108,47 @@ class _AcademicsScreenState extends State<AcademicsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-              if (state.error != null)
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(state.error!, style: const TextStyle(color: AppTheme.error)),
-                ),
-              if (state.tasks.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(32.0),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.verified_user_rounded, size: 64, color: Colors.grey),
-                        SizedBox(height: 16),
-                        Text('All caught up!', style: TextStyle(color: Colors.grey)),
-                      ],
+                if (state.error != null)
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      state.error!,
+                      style: const TextStyle(color: AppTheme.error),
                     ),
                   ),
-                )
-              else
-                ...state.tasks.map((task) => _TaskItem(
-                  task: task,
-                  onSubmitTap: () => _openSubmitDialog(context, task, token),
-                )),
-              const SizedBox(height: 100), // spacing for bottom nav
-            ],
+                if (state.tasks.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(32.0),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.verified_user_rounded,
+                            size: 64,
+                            color: Colors.grey,
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'All caught up!',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  ...state.tasks.map(
+                    (task) => _TaskItem(
+                      task: task,
+                      onSubmitTap: () =>
+                          _openSubmitDialog(context, task, token),
+                    ),
+                  ),
+                const SizedBox(height: 100), // spacing for bottom nav
+              ],
+            ),
           ),
-        ),
         );
       },
     );
@@ -137,7 +163,7 @@ class _TaskItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSubmitted = task.isSubmitted;
-    
+
     Color statusColor = AppTheme.warning;
     String statusText = 'Pending';
     if (task.submissionStatus == 'graded') {
@@ -159,12 +185,16 @@ class _TaskItem extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppTheme.secondary.withValues(alpha: 0.1),
+                  color: AppTheme.brandInk(context).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   task.taskType,
-                  style: const TextStyle(color: AppTheme.secondary, fontSize: 10, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: AppTheme.brandInk(context),
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
               Container(
@@ -175,22 +205,39 @@ class _TaskItem extends StatelessWidget {
                 ),
                 child: Text(
                   statusText,
-                  style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          Text(task.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          Text(
+            task.title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
           const SizedBox(height: 4),
-          Text(task.subjectName, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          Text(
+            task.subjectName,
+            style: const TextStyle(color: Colors.grey, fontSize: 12),
+          ),
           if (task.dueDate != null) ...[
             const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.calendar_today_rounded, size: 14, color: Colors.grey),
+                const Icon(
+                  Icons.calendar_today_rounded,
+                  size: 14,
+                  color: Colors.grey,
+                ),
                 const SizedBox(width: 4),
-                Text('Due: ${task.dueDate!.day}/${task.dueDate!.month}/${task.dueDate!.year}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                Text(
+                  'Due: ${task.dueDate!.day}/${task.dueDate!.month}/${task.dueDate!.year}',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                ),
               ],
             ),
           ],

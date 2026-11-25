@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
-import 'package:lms/core/navigation/app_route_observer.dart';
 import 'package:lms/core/theme/app_theme.dart';
 import 'package:lms/core/widgets/app_scaffold.dart';
 import 'package:lms/features/dashboard/data/models/dashboard_models.dart';
@@ -35,30 +34,8 @@ class StudentDashboardScreen extends StatefulWidget {
   State<StudentDashboardScreen> createState() => _StudentDashboardScreenState();
 }
 
-class _StudentDashboardScreenState extends State<StudentDashboardScreen>
-    with RouteAware {
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final route = ModalRoute.of(context);
-    if (route != null) appRouteObserver.subscribe(this, route);
-  }
-
-  @override
-  void dispose() {
-    appRouteObserver.unsubscribe(this);
-    super.dispose();
-  }
-
-  /// Home sits under pushed routes (exam, results...). Reload when they pop so
-  /// exam counts and stats are not stale until the app is restarted.
-  @override
-  void didPopNext() {
-    final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
-    context.read<StudentDashboardCubit>().loadDashboard(token);
-    context.read<ExamsCubit>().loadStudentExams(token);
-  }
-
+class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
+  // MainLayoutScreen reloads Home when a pushed page closes (student_data_refresh).
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<StudentDashboardCubit, StudentDashboardState>(
@@ -71,17 +48,51 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen>
 
         final data = state.data;
         if (data == null) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.wifi_off_rounded, size: 36, color: Colors.grey),
-                SizedBox(height: 16),
-                Text(
-                  'Connecting to Academy...',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ],
+          // First load failed (or has not started): explain and offer a
+          // retry instead of a permanent "Connecting..." screen.
+          final failed = state.status == StudentDashboardStatus.failure;
+          return Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 32.w),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.wifi_off_rounded,
+                    size: 36,
+                    color: Colors.grey,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    failed
+                        ? 'Could not load your dashboard'
+                        : 'Connecting to Academy...',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  if (failed) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Check your internet connection and try again.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12.sp,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: () =>
+                        context.read<StudentDashboardCubit>().loadDashboard(
+                          context.read<AuthBloc>().state.session?.accessToken ??
+                              '',
+                        ),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -91,33 +102,15 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen>
         );
 
         return Scaffold(
-          // Start-aligned: the mic FAB from MainLayout owns the end corner, and
-          // two end-aligned FABs overlapped (Ask Doubt rendered as "Ask Do").
-          floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const DoubtSessionScreen(),
-                ),
-              );
-            },
-            backgroundColor: AppTheme.secondary,
-            foregroundColor: const Color(0xFF025036),
-            elevation: 6,
-            icon: const PhosphorIcon(PhosphorIcons.chatTeardropText, size: 20),
-            label: const Text(
-              'Ask Doubt',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-            ),
-          ),
           body: RefreshIndicator(
             onRefresh: () async {
               final token =
                   context.read<AuthBloc>().state.session?.accessToken ?? '';
               await Future.wait([
-                context.read<StudentDashboardCubit>().loadDashboard(token),
+                context.read<StudentDashboardCubit>().loadDashboard(
+                  token,
+                  silent: true,
+                ),
                 context.read<CoursesCubit>().loadCoursesAndBatches(token),
                 context.read<LiveClassesCubit>().fetchLiveClasses(token),
               ]);
@@ -183,7 +176,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen>
                     ),
 
                     _buildSectionHeader(context, 'Quick Access Tools'),
-                    const _QuickAccessGrid(),
+                    // Only tools the student's courses allow (QA 7.3). The old
+                    // check guessed from the batch name ("test", "shakti").
+                    _QuickAccessGrid(access: data.access),
                     SizedBox(height: 18.h),
 
                     if (activeExam != null) ...[
@@ -630,9 +625,9 @@ class _MentorSessionCard extends StatelessWidget {
                       color: AppTheme.accent,
                       borderRadius: BorderRadius.circular(12.r),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.auto_awesome_rounded,
-                      color: AppTheme.primary,
+                      color: AppTheme.ink(context),
                     ),
                   ),
                   SizedBox(width: 10.w),
@@ -1271,7 +1266,9 @@ class _ClassScheduleList extends StatelessWidget {
 }
 
 class _QuickAccessGrid extends StatelessWidget {
-  const _QuickAccessGrid();
+  const _QuickAccessGrid({required this.access});
+
+  final StudentFeatureAccess access;
 
   @override
   Widget build(BuildContext context) {
@@ -1288,15 +1285,15 @@ class _QuickAccessGrid extends StatelessWidget {
       crossAxisSpacing: 10.w,
       mainAxisSpacing: 10.h,
       children: [
-        _buildAccessCard(
-          context,
-          title: 'Courses',
-          subtitle: 'Videos & Notes',
-          icon: PhosphorIcons.bookOpenBold,
-          accentColor: const Color(0xFF0033A0), // Deep Blue
-          route: AppRoutes.courses,
-        ),
-        if (access.dpps)
+        if (access.studyMaterials)
+          _buildAccessCard(
+            context,
+            title: 'Courses',
+            subtitle: 'Videos & Notes',
+            icon: PhosphorIcons.bookOpenBold,
+            accentColor: const Color(0xFF0033A0), // Deep Blue
+            route: AppRoutes.courses,
+          ),
         _buildAccessCard(
           context,
           title: 'DPP',
@@ -1307,14 +1304,14 @@ class _QuickAccessGrid extends StatelessWidget {
           tabIndex: 1,
         ),
         if (access.liveClasses)
-        _buildAccessCard(
-          context,
-          title: 'Live Class',
-          subtitle: 'Join Live Now',
-          icon: PhosphorIcons.videoCameraBold,
-          accentColor: const Color(0xFFDC2626), // Red
-          route: AppRoutes.liveClasses,
-        ),
+          _buildAccessCard(
+            context,
+            title: 'Live Class',
+            subtitle: 'Join Live Now',
+            icon: PhosphorIcons.videoCameraBold,
+            accentColor: const Color(0xFFDC2626), // Red
+            route: AppRoutes.liveClasses,
+          ),
         _buildAccessCard(
           context,
           title: 'Ask Doubt',
@@ -1330,15 +1327,15 @@ class _QuickAccessGrid extends StatelessWidget {
             );
           },
         ),
-        if (access.liveClasses)
-        _buildAccessCard(
-          context,
-          title: 'Attendance',
-          subtitle: 'My Register',
-          icon: PhosphorIcons.calendarCheckBold,
-          accentColor: const Color(0xFF059669), // Emerald
-          route: AppRoutes.attendance,
-        ),
+        if (access.attendance)
+          _buildAccessCard(
+            context,
+            title: 'Attendance',
+            subtitle: 'My Register',
+            icon: PhosphorIcons.calendarCheckBold,
+            accentColor: const Color(0xFF059669), // Emerald
+            route: AppRoutes.attendance,
+          ),
         _buildAccessCard(
           context,
           title: 'Fees',
@@ -1411,11 +1408,7 @@ class _QuickAccessGrid extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10.r),
                 ),
                 child: Center(
-                  child: PhosphorIcon(
-                    icon,
-                    color: accentColor,
-                    size: 19.sp,
-                  ),
+                  child: PhosphorIcon(icon, color: accentColor, size: 19.sp),
                 ),
               ),
               SizedBox(width: 8.w),
@@ -1443,7 +1436,9 @@ class _QuickAccessGrid extends StatelessWidget {
                       style: TextStyle(
                         fontWeight: FontWeight.w500,
                         fontSize: 9.sp,
-                        color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                        color: isDark
+                            ? Colors.white60
+                            : const Color(0xFF64748B),
                       ),
                     ),
                   ],
@@ -1553,7 +1548,8 @@ class _PerformanceDashboardCard extends StatelessWidget {
       totalAttemptedAll += attempted;
       totalCorrectAll += correct;
 
-      final current = subjectTotals[subjectName] ?? {'attempted': 0, 'correct': 0};
+      final current =
+          subjectTotals[subjectName] ?? {'attempted': 0, 'correct': 0};
       subjectTotals[subjectName] = {
         'attempted': (current['attempted'] ?? 0) + attempted,
         'correct': (current['correct'] ?? 0) + correct,
@@ -1568,31 +1564,28 @@ class _PerformanceDashboardCard extends StatelessWidget {
         final val = (entry.value is num)
             ? (entry.value as num).toDouble()
             : (double.tryParse(entry.value.toString()) ?? 0.0);
-        subjectTotals[key] = {
-          'attempted': 100,
-          'correct': val.round(),
-        };
+        subjectTotals[key] = {'attempted': 100, 'correct': val.round()};
       }
     }
 
+    // Accuracy = correct / attempted; never the marks percentage, which goes
+    // negative with negative marking (QA 6.5).
     final double calcOverallAcc = totalAttemptedAll > 0
         ? (totalCorrectAll / totalAttemptedAll) * 100
-        : (double.tryParse(overall['overallPercentage']?.toString() ?? '0') ??
-              0.0);
+        : (double.tryParse(overall['accuracy']?.toString() ?? '0') ?? 0.0)
+              .clamp(0.0, 100.0);
 
     final String overallAccuracyStr =
         summary['overallAccuracy']?.toString() ??
         '${calcOverallAcc.toStringAsFixed(1)}%';
 
-    final List<MapEntry<String, double>> subjectAccuracies = subjectTotals.entries
-        .map((e) {
+    final List<MapEntry<String, double>> subjectAccuracies =
+        subjectTotals.entries.map((e) {
           final att = e.value['attempted'] ?? 0;
           final corr = e.value['correct'] ?? 0;
           final acc = att > 0 ? (corr / att) * 100.0 : 0.0;
           return MapEntry(e.key, acc);
-        })
-        .toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+        }).toList()..sort((a, b) => b.value.compareTo(a.value));
 
     final displaySubjects = subjectAccuracies.take(4).toList();
 
@@ -1626,9 +1619,10 @@ class _PerformanceDashboardCard extends StatelessWidget {
               ? (dppDataMap['recentDpps'] as List).length
               : 0);
 
-    final int practicePapers = (counts['practicePapers'] is num)
-        ? (counts['practicePapers'] as num).toInt()
-        : 0;
+    // Backend key is practicePaperCount; keep the old key as fallback.
+    final dynamic practiceRaw =
+        counts['practicePaperCount'] ?? counts['practicePapers'];
+    final int practicePapers = practiceRaw is num ? practiceRaw.toInt() : 0;
 
     return Container(
       padding: EdgeInsets.all(16.w),
@@ -1744,9 +1738,7 @@ class _PerformanceDashboardCard extends StatelessWidget {
                         final color = subjectColors[idx % subjectColors.length];
                         return Padding(
                           padding: EdgeInsets.only(
-                            bottom: idx == displaySubjects.length - 1
-                                ? 0
-                                : 5.h,
+                            bottom: idx == displaySubjects.length - 1 ? 0 : 5.h,
                           ),
                           child: _buildSubjectAccuracyProgress(
                             isDark,
@@ -1791,7 +1783,10 @@ class _PerformanceDashboardCard extends StatelessWidget {
                 label: 'Live Exams',
                 value: '$liveExams',
                 icon: PhosphorIcons.videoConference,
-                onTap: () => Navigator.pushNamed(context, AppRoutes.studentExams),
+                // Practice tab (index 1); pushing studentExams crashed (no ExamsCubit).
+                onTap: () => context
+                    .findAncestorStateOfType<MainLayoutScreenState>()
+                    ?.setSelectedIndex(1),
               ),
               _buildBottomKpi(
                 context,
@@ -1812,7 +1807,10 @@ class _PerformanceDashboardCard extends StatelessWidget {
                 label: 'Practice Papers',
                 value: '$practicePapers',
                 icon: PhosphorIcons.clipboardText,
-                onTap: () => Navigator.pushNamed(context, AppRoutes.studentExams),
+                // Practice tab (index 1); pushing studentExams crashed (no ExamsCubit).
+                onTap: () => context
+                    .findAncestorStateOfType<MainLayoutScreenState>()
+                    ?.setSelectedIndex(1),
               ),
             ],
           ),
@@ -2018,7 +2016,9 @@ class _ActiveExamCard extends StatelessWidget {
                     SizedBox(width: 4.w),
                     Flexible(
                       child: Text(
-                        exam.subjectName,
+                        exam.subjectName.isNotEmpty
+                            ? exam.subjectName
+                            : 'All subjects',
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 9.sp,
@@ -2059,14 +2059,11 @@ class _ActiveExamCard extends StatelessWidget {
           SizedBox(width: 8.w),
           ElevatedButton(
             onPressed: () async {
+              // MainLayoutScreen reloads Home, the exam list and Progress
+              // when this route closes (RouteAware.didPopNext).
               await Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => ExamPlayerScreen(exam: exam)),
               );
-              if (context.mounted) {
-                final token =
-                    context.read<AuthBloc>().state.session?.accessToken ?? '';
-                await context.read<ExamsCubit>().loadStudentExams(token);
-              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primary,
@@ -2463,207 +2460,222 @@ class _AvailableCoursesList extends StatelessWidget {
               ];
 
               final hexColorStr = course.color?.replaceAll('#', '');
-              final courseColor = hexColorStr != null && hexColorStr.length == 6
-                  ? Color(int.parse('FF$hexColorStr', radix: 16))
-                  : palette[index % palette.length];
+              final courseColor = AppTheme.readableAccent(
+                context,
+                hexColorStr != null && hexColorStr.length == 6
+                    ? Color(int.parse('FF$hexColorStr', radix: 16))
+                    : palette[index % palette.length],
+              );
 
-              return Container(
-                width: 220.w,
-                decoration: BoxDecoration(
-                  color: isDark ? AppTheme.darkSurface : Colors.white,
-                  borderRadius: BorderRadius.circular(16.r),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : const Color(0xFFE5E7EB),
-                    width: 0.8,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(
-                        alpha: isDark ? 0.2 : 0.03,
-                      ),
-                      blurRadius: 12,
-                      offset: Offset(0, 3.h),
-                    ),
-                  ],
+              // The whole card opens the course, not just the Enroll button.
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.pushNamed(
+                  context,
+                  AppRoutes.courseDetail,
+                  arguments: course.id,
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16.r),
-                  child: Column(
-                    children: [
-                      Container(
-                        height: 4.h,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              courseColor,
-                              courseColor.withValues(alpha: 0.7),
-                            ],
+                child: Container(
+                  width: 220.w,
+                  decoration: BoxDecoration(
+                    color: isDark ? AppTheme.darkSurface : Colors.white,
+                    borderRadius: BorderRadius.circular(16.r),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : const Color(0xFFE5E7EB),
+                      width: 0.8,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(
+                          alpha: isDark ? 0.2 : 0.03,
+                        ),
+                        blurRadius: 12,
+                        offset: Offset(0, 3.h),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16.r),
+                    child: Column(
+                      children: [
+                        Container(
+                          height: 4.h,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                courseColor,
+                                courseColor.withValues(alpha: 0.7),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.all(12.w),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Container(
-                                        padding: EdgeInsets.all(6.w),
-                                        decoration: BoxDecoration(
-                                          color: courseColor.withValues(
-                                            alpha: 0.1,
+                        Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.all(12.w),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: EdgeInsets.all(6.w),
+                                          decoration: BoxDecoration(
+                                            color: courseColor.withValues(
+                                              alpha: 0.1,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8.r,
+                                            ),
                                           ),
+                                          child: PhosphorIcon(
+                                            PhosphorIcons.graduationCap,
+                                            color: courseColor,
+                                            size: 14.sp,
+                                          ),
+                                        ),
+                                        if (course.tag != null &&
+                                            course.tag!.isNotEmpty) ...[
+                                          SizedBox(width: 6.w),
+                                          Container(
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 6.w,
+                                              vertical: 2.h,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.primary
+                                                  .withValues(alpha: 0.08),
+                                              borderRadius:
+                                                  BorderRadius.circular(6.r),
+                                            ),
+                                            child: Text(
+                                              course.tag!,
+                                              style: TextStyle(
+                                                color: AppTheme.primary,
+                                                fontSize: 8.sp,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      course.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 13.sp,
+                                        fontWeight: FontWeight.w800,
+                                        color: isDark
+                                            ? Colors.white
+                                            : const Color(0xFF111827),
+                                        letterSpacing: -0.3,
+                                      ),
+                                    ),
+                                    SizedBox(height: 2.h),
+                                    Text(
+                                      course.subtitle ??
+                                          course.description ??
+                                          'Comprehensive preparation package.',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isDark
+                                            ? Colors.white60
+                                            : const Color(0xFF6B7280),
+                                        fontSize: 9.sp,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        if (course.actualFee != null) ...[
+                                          Text(
+                                            '₹${course.actualFee}',
+                                            style: TextStyle(
+                                              fontSize: 9.sp,
+                                              decoration:
+                                                  TextDecoration.lineThrough,
+                                              color: isDark
+                                                  ? Colors.white38
+                                                  : const Color(0xFF9CA3AF),
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          SizedBox(width: 4.w),
+                                        ],
+                                        Text(
+                                          '₹${course.fee}',
+                                          style: TextStyle(
+                                            fontSize: 14.sp,
+                                            fontWeight: FontWeight.w900,
+                                            color: AppTheme.primary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.pushNamed(
+                                          context,
+                                          AppRoutes.courseDetail,
+                                          arguments: course.id,
+                                        );
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppTheme.primary,
+                                        foregroundColor: Colors.white,
+                                        // Default 48dp tap target doesn't
+                                        // shrink with the fixed-height card.
+                                        minimumSize: Size.zero,
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: 10.w,
+                                          vertical: 6.h,
+                                        ),
+                                        shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
                                             8.r,
                                           ),
                                         ),
-                                        child: PhosphorIcon(
-                                          PhosphorIcons.graduationCap,
-                                          color: courseColor,
-                                          size: 14.sp,
-                                        ),
+                                        elevation: 0,
                                       ),
-                                      if (course.tag != null &&
-                                          course.tag!.isNotEmpty) ...[
-                                        SizedBox(width: 6.w),
-                                        Container(
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: 6.w,
-                                            vertical: 2.h,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: AppTheme.primary.withValues(
-                                              alpha: 0.08,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              6.r,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            course.tag!,
-                                            style: TextStyle(
-                                              color: AppTheme.primary,
-                                              fontSize: 8.sp,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    course.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 13.sp,
-                                      fontWeight: FontWeight.w800,
-                                      color: isDark
-                                          ? Colors.white
-                                          : const Color(0xFF111827),
-                                      letterSpacing: -0.3,
-                                    ),
-                                  ),
-                                  SizedBox(height: 2.h),
-                                  Text(
-                                    course.subtitle ??
-                                        course.description ??
-                                        'Comprehensive preparation package.',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: isDark
-                                          ? Colors.white60
-                                          : const Color(0xFF6B7280),
-                                      fontSize: 9.sp,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      if (course.actualFee != null) ...[
-                                        Text(
-                                          '₹${course.actualFee}',
-                                          style: TextStyle(
-                                            fontSize: 9.sp,
-                                            decoration:
-                                                TextDecoration.lineThrough,
-                                            color: isDark
-                                                ? Colors.white38
-                                                : const Color(0xFF9CA3AF),
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        SizedBox(width: 4.w),
-                                      ],
-                                      Text(
-                                        '₹${course.fee}',
+                                      child: Text(
+                                        'Enroll',
                                         style: TextStyle(
-                                          fontSize: 14.sp,
-                                          fontWeight: FontWeight.w900,
-                                          color: AppTheme.primary,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10.sp,
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                  ElevatedButton(
-                                    onPressed: () {
-                                      Navigator.pushNamed(
-                                        context,
-                                        AppRoutes.courseDetail,
-                                        arguments: course.id,
-                                      );
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppTheme.primary,
-                                      foregroundColor: Colors.white,
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: 10.w,
-                                        vertical: 6.h,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(
-                                          8.r,
-                                        ),
-                                      ),
-                                      elevation: 0,
                                     ),
-                                    child: Text(
-                                      'Enroll',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 10.sp,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               );

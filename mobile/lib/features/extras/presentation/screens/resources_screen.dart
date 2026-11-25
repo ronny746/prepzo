@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lms/core/theme/app_theme.dart';
 import 'package:lms/core/widgets/app_scaffold.dart';
+import 'package:lms/core/widgets/load_error_view.dart';
 import 'package:lms/core/widgets/section_card.dart';
 import 'package:lms/features/extras/presentation/cubit/extras_cubit.dart';
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
@@ -34,7 +35,23 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
           }
 
           if (state.error != null) {
-            return Center(child: Text(state.error!, style: const TextStyle(color: AppTheme.error)));
+            final locked = state.error!.toLowerCase().contains('current plan');
+            return LoadErrorView(
+              icon: locked
+                  ? Icons.lock_outline_rounded
+                  : Icons.cloud_off_rounded,
+              title: locked
+                  ? 'Study material is not in your plan'
+                  : 'Could not load study materials',
+              message: locked
+                  ? 'Your current course does not include notes or videos.'
+                  : 'Check your internet connection and try again.',
+              onAction: locked
+                  ? null
+                  : () => context.read<ExtrasCubit>().loadResources(
+                      context.read<AuthBloc>().state.session?.accessToken ?? '',
+                    ),
+            );
           }
 
           if (state.resources.isEmpty) {
@@ -55,23 +72,44 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                     leading: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppTheme.secondary.withValues(alpha: 0.1),
+                        color: AppTheme.brandInk(
+                          context,
+                        ).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(
-                        res.type == 'video' ? Icons.play_circle_fill : Icons.picture_as_pdf,
-                        color: AppTheme.secondary,
+                        res.type == 'video'
+                            ? Icons.play_circle_fill
+                            : Icons.picture_as_pdf,
+                        color: AppTheme.brandInk(context),
                       ),
                     ),
-                    title: Text(res.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text(
+                      res.title,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(res.subjectName, style: const TextStyle(color: AppTheme.primary, fontSize: 12)),
-                        if (res.description.isNotEmpty) Text(res.description, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        Text(
+                          res.subjectName,
+                          style: const TextStyle(
+                            color: AppTheme.primary,
+                            fontSize: 12,
+                          ),
+                        ),
+                        if (res.description.isNotEmpty)
+                          Text(
+                            res.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                       ],
                     ),
-                    trailing: const Icon(Icons.download, color: AppTheme.primary),
+                    trailing: const Icon(
+                      Icons.download,
+                      color: AppTheme.primary,
+                    ),
                     onTap: () {
                       if (res.fileUrl.isNotEmpty) {
                         Navigator.push(

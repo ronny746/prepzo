@@ -26,7 +26,6 @@ class AppScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       extendBody: true,
       drawer: drawer,
@@ -36,8 +35,8 @@ class AppScaffold extends StatelessWidget {
                 title,
                 style: Theme.of(context).appBarTheme.titleTextStyle,
               ),
-              leading: drawer != null 
-                  ? null 
+              leading: drawer != null
+                  ? null
                   : Builder(
                       builder: (context) {
                         if (Scaffold.maybeOf(context)?.hasDrawer ?? false) {
@@ -46,7 +45,9 @@ class AppScaffold extends StatelessWidget {
                             onPressed: () => Scaffold.of(context).openDrawer(),
                           );
                         }
-                        return Navigator.canPop(context) ? const BackButton() : const SizedBox.shrink();
+                        return Navigator.canPop(context)
+                            ? const BackButton()
+                            : const SizedBox.shrink();
                       },
                     ),
               actions: actions,
@@ -76,7 +77,9 @@ class AppScaffold extends StatelessWidget {
 
   Widget _buildScrollableBody(BuildContext context) {
     return SingleChildScrollView(
-      physics: onRefresh != null ? const AlwaysScrollableScrollPhysics() : const BouncingScrollPhysics(),
+      physics: onRefresh != null
+          ? const AlwaysScrollableScrollPhysics()
+          : const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

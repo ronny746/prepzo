@@ -38,12 +38,16 @@ class ParentExamAnalysisState extends Equatable {
 
 class ParentExamAnalysisCubit extends Cubit<ParentExamAnalysisState> {
   ParentExamAnalysisCubit({required ExamsRepository examsRepository})
-      : _examsRepository = examsRepository,
-        super(const ParentExamAnalysisState());
+    : _examsRepository = examsRepository,
+      super(const ParentExamAnalysisState());
 
   final ExamsRepository _examsRepository;
 
-  Future<void> loadAnalysis(String token, String examId, {String? childId}) async {
+  Future<void> loadAnalysis(
+    String token,
+    String examId, {
+    String? childId,
+  }) async {
     emit(state.copyWith(status: ParentExamAnalysisStatus.loading));
     try {
       final futures = await Future.wait([
@@ -55,13 +59,20 @@ class ParentExamAnalysisCubit extends Cubit<ParentExamAnalysisState> {
       final analysis = futures[0] as ParentExamAnalysisModel;
       final remedialDpps = futures[1] as List<dynamic>;
 
-      emit(state.copyWith(
-        status: ParentExamAnalysisStatus.success,
-        analysis: analysis,
-        remedialDpps: remedialDpps,
-      ));
+      emit(
+        state.copyWith(
+          status: ParentExamAnalysisStatus.success,
+          analysis: analysis,
+          remedialDpps: remedialDpps,
+        ),
+      );
     } catch (e) {
-      emit(state.copyWith(status: ParentExamAnalysisStatus.failure, error: e.toString()));
+      emit(
+        state.copyWith(
+          status: ParentExamAnalysisStatus.failure,
+          error: e.toString(),
+        ),
+      );
     }
   }
 }

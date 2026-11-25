@@ -57,7 +57,12 @@ class AuthLogoutRequested extends AuthEvent {
   const AuthLogoutRequested();
 }
 
-/// Raised when the server rejects our token (session ended / other device).
+/// The server rejected the saved token (expired, or signed in elsewhere).
 class AuthSessionExpired extends AuthEvent {
-  const AuthSessionExpired();
+  const AuthSessionExpired(this.message);
+
+  final String message;
+
+  @override
+  List<Object?> get props => [message];
 }

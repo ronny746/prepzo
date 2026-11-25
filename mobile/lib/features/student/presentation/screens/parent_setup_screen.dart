@@ -83,7 +83,11 @@ class _ParentSetupScreenState extends State<ParentSetupScreen> {
           children: [
             const Text(
               'Link Parent Account',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppTheme.primary),
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.primary,
+              ),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -91,14 +95,16 @@ class _ParentSetupScreenState extends State<ParentSetupScreen> {
               style: TextStyle(color: Colors.grey, fontSize: 14),
             ),
             const SizedBox(height: 24),
-            
+
             if (_isSuccess)
               Container(
                 padding: const EdgeInsets.all(16),
                 margin: const EdgeInsets.only(bottom: 24),
                 decoration: BoxDecoration(
                   color: AppTheme.success.withValues(alpha: 0.1),
-                  border: Border.all(color: AppTheme.success.withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: AppTheme.success.withValues(alpha: 0.3),
+                  ),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Column(
@@ -106,7 +112,11 @@ class _ParentSetupScreenState extends State<ParentSetupScreen> {
                   children: [
                     Text(
                       'Parent Profile Created & Linked!',
-                      style: TextStyle(color: AppTheme.success, fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(
+                        color: AppTheme.success,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                     SizedBox(height: 8),
                     Text(
@@ -141,9 +151,13 @@ class _ParentSetupScreenState extends State<ParentSetupScreen> {
                       decoration: InputDecoration(
                         labelText: 'Parent First Name *',
                         prefixIcon: const Icon(Icons.person_outline),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      validator: (value) => value == null || value.isEmpty ? 'First name is required' : null,
+                      validator: (value) => value == null || value.isEmpty
+                          ? 'First name is required'
+                          : null,
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
@@ -151,9 +165,13 @@ class _ParentSetupScreenState extends State<ParentSetupScreen> {
                       decoration: InputDecoration(
                         labelText: 'Parent Last Name *',
                         prefixIcon: const Icon(Icons.person_outline),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      validator: (value) => value == null || value.isEmpty ? 'Last name is required' : null,
+                      validator: (value) => value == null || value.isEmpty
+                          ? 'Last name is required'
+                          : null,
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
@@ -162,10 +180,13 @@ class _ParentSetupScreenState extends State<ParentSetupScreen> {
                       decoration: InputDecoration(
                         labelText: 'Parent Email Address *',
                         prefixIcon: const Icon(Icons.email_outlined),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       validator: (value) {
-                        if (value == null || value.isEmpty) return 'Email is required';
+                        if (value == null || value.isEmpty)
+                          return 'Email is required';
                         if (!value.contains('@')) return 'Enter a valid email';
                         return null;
                       },
@@ -177,7 +198,9 @@ class _ParentSetupScreenState extends State<ParentSetupScreen> {
                       decoration: InputDecoration(
                         labelText: 'Parent Phone Number',
                         prefixIcon: const Icon(Icons.phone_outlined),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -189,11 +212,26 @@ class _ParentSetupScreenState extends State<ParentSetupScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primary,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         child: _isLoading
-                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text('Setup Parent Account', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                'Setup Parent Account',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                       ),
                     ),
                   ],

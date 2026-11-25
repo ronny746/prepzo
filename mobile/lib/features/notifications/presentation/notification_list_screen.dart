@@ -6,6 +6,7 @@ import 'package:lms/core/theme/app_theme.dart';
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:lms/features/notifications/data/models/notification_model.dart';
 import 'package:lms/features/notifications/data/repositories/notifications_repository.dart';
+import 'package:lms/features/notifications/presentation/notification_links.dart';
 import 'package:lms/routes/app_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:intl/intl.dart';
@@ -56,14 +57,22 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
   void _startRealtimeNotifications() {
     final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
     if (token.isEmpty) return;
-    _notificationSocket = io.io(
-      AppConfig.webUrl,
-      io.OptionBuilder().setTransports(['websocket']).enableReconnection().build(),
-    )
-      ..onConnect((_) => _notificationSocket?.emit('subscribe-notifications', {'token': token}))
-      ..on('notification:created', (_) {
-        if (mounted) _loadNotifications(silent: true);
-      });
+    _notificationSocket =
+        io.io(
+            AppConfig.webUrl,
+            io.OptionBuilder()
+                .setTransports(['websocket'])
+                .enableReconnection()
+                .build(),
+          )
+          ..onConnect(
+            (_) => _notificationSocket?.emit('subscribe-notifications', {
+              'token': token,
+            }),
+          )
+          ..on('notification:created', (_) {
+            if (mounted) _loadNotifications(silent: true);
+          });
   }
 
   Future<void> _loadNotifications({bool silent = false}) async {
@@ -112,7 +121,9 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
   void _markAllAsRead() {
     final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
     setState(() {
-      _notifications = _notifications.map((item) => item.copyWith(isRead: true)).toList();
+      _notifications = _notifications
+          .map((item) => item.copyWith(isRead: true))
+          .toList();
     });
     _repository.markAllAsRead(token);
 
@@ -126,8 +137,13 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Clear All Notifications?', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text('Are you sure you want to delete all notifications? This action cannot be undone.'),
+        title: const Text(
+          'Clear All Notifications?',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'Are you sure you want to delete all notifications? This action cannot be undone.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -135,7 +151,10 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.error,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Clear All'),
           ),
         ],
@@ -157,24 +176,28 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
   Widget build(BuildContext context) {
     var filtered = _notifications.where((item) {
       if (_selectedCategory == 'Unread' && item.isRead) return false;
-      if (_selectedCategory != 'All' && _selectedCategory != 'Unread' && item.category.toLowerCase() != _selectedCategory.toLowerCase()) {
+      if (_selectedCategory != 'All' &&
+          _selectedCategory != 'Unread' &&
+          item.category.toLowerCase() != _selectedCategory.toLowerCase()) {
         return false;
       }
 
       if (_searchQuery.isNotEmpty) {
         final q = _searchQuery.toLowerCase();
-        return item.title.toLowerCase().contains(q) || item.message.toLowerCase().contains(q) || item.category.toLowerCase().contains(q);
+        return item.title.toLowerCase().contains(q) ||
+            item.message.toLowerCase().contains(q) ||
+            item.category.toLowerCase().contains(q);
       }
 
       return true;
     }).toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
+      backgroundColor: AppTheme.page(context),
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF111827),
+        backgroundColor: AppTheme.card(context),
+        foregroundColor: AppTheme.ink(context),
         title: const Text(
           'Notification Center',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
@@ -182,12 +205,20 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
         actions: [
           if (_notifications.isNotEmpty) ...[
             IconButton(
-              icon: const PhosphorIcon(PhosphorIcons.checks, color: AppTheme.primary, size: 20),
+              icon: const PhosphorIcon(
+                PhosphorIcons.checks,
+                color: AppTheme.primary,
+                size: 20,
+              ),
               tooltip: 'Mark All Read',
               onPressed: _markAllAsRead,
             ),
             IconButton(
-              icon: const PhosphorIcon(PhosphorIcons.trash, color: Colors.grey, size: 20),
+              icon: const PhosphorIcon(
+                PhosphorIcons.trash,
+                color: Colors.grey,
+                size: 20,
+              ),
               tooltip: 'Clear All',
               onPressed: _clearAllNotifications,
             ),
@@ -208,14 +239,25 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                 onChanged: (val) => setState(() => _searchQuery = val),
                 decoration: InputDecoration(
                   hintText: 'Search notifications...',
-                  hintStyle: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+                  hintStyle: const TextStyle(
+                    color: Color(0xFF9CA3AF),
+                    fontSize: 13,
+                  ),
                   prefixIcon: const Padding(
                     padding: EdgeInsets.all(12),
-                    child: PhosphorIcon(PhosphorIcons.magnifyingGlass, color: Color(0xFF6B7280), size: 18),
+                    child: PhosphorIcon(
+                      PhosphorIcons.magnifyingGlass,
+                      color: Color(0xFF6B7280),
+                      size: 18,
+                    ),
                   ),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.close, size: 16, color: Colors.grey),
+                          icon: const Icon(
+                            Icons.close,
+                            size: 16,
+                            color: Colors.grey,
+                          ),
                           onPressed: () {
                             _searchController.clear();
                             setState(() => _searchQuery = '');
@@ -223,10 +265,19 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                         )
                       : null,
                   filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: const BorderSide(color: AppTheme.primary)),
+                  fillColor: AppTheme.card(context),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide(color: AppTheme.line(context)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: const BorderSide(color: AppTheme.primary),
+                  ),
                 ),
               ),
               const SizedBox(height: 14),
@@ -239,24 +290,41 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                     final isSelected = _selectedCategory == cat;
                     final count = cat == 'Unread'
                         ? _notifications.where((n) => !n.isRead).length
-                        : (cat == 'All' ? _notifications.length : _notifications.where((n) => n.category.toLowerCase() == cat.toLowerCase()).length);
+                        : (cat == 'All'
+                              ? _notifications.length
+                              : _notifications
+                                    .where(
+                                      (n) =>
+                                          n.category.toLowerCase() ==
+                                          cat.toLowerCase(),
+                                    )
+                                    .length);
 
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ChoiceChip(
                         label: Text('$cat ($count)'),
                         selected: isSelected,
-                        onSelected: (_) => setState(() => _selectedCategory = cat),
+                        onSelected: (_) =>
+                            setState(() => _selectedCategory = cat),
                         selectedColor: AppTheme.primary,
-                        backgroundColor: Colors.white,
+                        backgroundColor: AppTheme.card(context),
                         labelStyle: TextStyle(
-                          color: isSelected ? Colors.white : const Color(0xFF4B5563),
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          color: isSelected
+                              ? Colors.white
+                              : const Color(0xFF4B5563),
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.w500,
                           fontSize: 12,
                         ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
-                          side: BorderSide(color: isSelected ? AppTheme.primary : const Color(0xFFE5E7EB)),
+                          side: BorderSide(
+                            color: isSelected
+                                ? AppTheme.primary
+                                : const Color(0xFFE5E7EB),
+                          ),
                         ),
                       ),
                     );
@@ -277,19 +345,35 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(32),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppTheme.card(context),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                    border: Border.all(color: AppTheme.line(context)),
                   ),
                   child: Column(
                     children: [
-                      PhosphorIcon(PhosphorIcons.bellSlash, size: 48, color: Colors.grey.shade400),
+                      PhosphorIcon(
+                        PhosphorIcons.bellSlash,
+                        size: 48,
+                        color: Colors.grey.shade400,
+                      ),
                       const SizedBox(height: 12),
-                      const Text('No notifications found', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF111827))),
+                      Text(
+                        'No notifications found',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: AppTheme.ink(context),
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       Text(
-                        _notifications.isEmpty ? 'All notifications cleared.' : 'Try changing your search or category filter.',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        _notifications.isEmpty
+                            ? 'All notifications cleared.'
+                            : 'Try changing your search or category filter.',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -303,7 +387,13 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                   separatorBuilder: (_, __) => const SizedBox(height: 12),
                   itemBuilder: (context, index) {
                     final item = filtered[index];
-                    final timeAgoStr = DateFormat('d MMM, hh:mm a').format(item.createdAt);
+                    final timeAgoStr = DateFormat(
+                      'd MMM, hh:mm a',
+                    ).format(item.createdAt);
+                    final linkInfo = NotificationLinks.parse(
+                      item.message,
+                      actionUrl: item.actionUrl,
+                    );
 
                     return Dismissible(
                       key: Key(item.id),
@@ -321,55 +411,115 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                           children: [
                             Icon(Icons.delete_outline, color: Colors.white),
                             SizedBox(width: 6),
-                            Text('Delete', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            Text(
+                              'Delete',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: item.isRead ? Colors.white : AppTheme.primary.withValues(alpha: 0.03),
+                          color: item.isRead
+                              ? AppTheme.card(context)
+                              : AppTheme.primary.withValues(alpha: 0.03),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: item.isRead ? const Color(0xFFF3F4F6) : AppTheme.primary.withValues(alpha: 0.2)),
+                          border: Border.all(
+                            color: item.isRead
+                                ? AppTheme.line(context)
+                                : AppTheme.primary.withValues(alpha: 0.2),
+                          ),
                           boxShadow: [
-                            BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 4)),
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.02),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
                           ],
                         ),
                         child: Material(
                           color: Colors.transparent,
                           borderRadius: BorderRadius.circular(20),
                           child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
                             onTap: () async {
-                              final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
+                              final token =
+                                  context
+                                      .read<AuthBloc>()
+                                      .state
+                                      .session
+                                      ?.accessToken ??
+                                  '';
                               setState(() {
-                                final idx = _notifications.indexWhere((n) => n.id == item.id);
+                                final idx = _notifications.indexWhere(
+                                  (n) => n.id == item.id,
+                                );
                                 if (idx != -1) {
-                                  _notifications[idx] = item.copyWith(isRead: true);
+                                  _notifications[idx] = item.copyWith(
+                                    isRead: true,
+                                  );
                                 }
                               });
                               _repository.markAsRead(item.id, token);
-                              final actionUrl = item.actionUrl;
-                              if (actionUrl != null && actionUrl.isNotEmpty) {
-                                final uri = Uri.tryParse(actionUrl);
-                                if (uri != null && await canLaunchUrl(uri)) {
-                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                              // One link and nothing else to read: open it.
+                              // Otherwise show the message with link buttons.
+                              if (linkInfo.links.length == 1 &&
+                                  linkInfo.text.isEmpty) {
+                                final uri = linkInfo.links.first;
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(
+                                    uri,
+                                    mode: LaunchMode.externalApplication,
+                                  );
                                   return;
+                                }
+                              } else if (linkInfo.links.isEmpty) {
+                                final actionUrl = item.actionUrl;
+                                if (actionUrl != null && actionUrl.isNotEmpty) {
+                                  final uri = Uri.tryParse(actionUrl);
+                                  if (uri != null &&
+                                      uri.hasScheme &&
+                                      await canLaunchUrl(uri)) {
+                                    await launchUrl(
+                                      uri,
+                                      mode: LaunchMode.externalApplication,
+                                    );
+                                    return;
+                                  }
                                 }
                               }
                               if (!context.mounted) return;
-                              Navigator.pushNamed(context, AppRoutes.notificationDetail, arguments: item.title);
+                              Navigator.pushNamed(
+                                context,
+                                AppRoutes.notificationDetail,
+                                arguments: item,
+                              );
                             },
                             leading: Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: item.isRead ? Colors.grey.shade100 : AppTheme.primary.withValues(alpha: 0.1),
+                                color: item.isRead
+                                    ? AppTheme.soft(context)
+                                    : AppTheme.primary.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(14),
                               ),
                               child: PhosphorIcon(
                                 item.category == 'Exams'
                                     ? PhosphorIcons.clipboardText
-                                    : (item.category == 'DPP' ? PhosphorIcons.lightning : (item.category == 'Live Class' ? PhosphorIcons.videoCamera : PhosphorIcons.bell)),
-                                color: item.isRead ? Colors.grey.shade700 : AppTheme.primary,
+                                    : (item.category == 'DPP'
+                                          ? PhosphorIcons.lightning
+                                          : (item.category == 'Live Class'
+                                                ? PhosphorIcons.videoCamera
+                                                : PhosphorIcons.bell)),
+                                color: item.isRead
+                                    ? AppTheme.inkSoft(context)
+                                    : AppTheme.primary,
                                 size: 20,
                               ),
                             ),
@@ -380,23 +530,39 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                                   child: Text(
                                     item.title,
                                     style: TextStyle(
-                                      fontWeight: item.isRead ? FontWeight.bold : FontWeight.w800,
+                                      fontWeight: item.isRead
+                                          ? FontWeight.bold
+                                          : FontWeight.w800,
                                       fontSize: 14,
-                                      color: const Color(0xFF111827),
+                                      color: AppTheme.ink(context),
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 PopupMenuButton<String>(
-                                  icon: const Icon(Icons.more_vert, size: 18, color: Colors.grey),
+                                  icon: const Icon(
+                                    Icons.more_vert,
+                                    size: 18,
+                                    color: Colors.grey,
+                                  ),
                                   onSelected: (val) {
-                                    final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
+                                    final token =
+                                        context
+                                            .read<AuthBloc>()
+                                            .state
+                                            .session
+                                            ?.accessToken ??
+                                        '';
                                     if (val == 'toggle') {
                                       setState(() {
-                                        final idx = _notifications.indexWhere((n) => n.id == item.id);
+                                        final idx = _notifications.indexWhere(
+                                          (n) => n.id == item.id,
+                                        );
                                         if (idx != -1) {
-                                          _notifications[idx] = item.copyWith(isRead: !item.isRead);
+                                          _notifications[idx] = item.copyWith(
+                                            isRead: !item.isRead,
+                                          );
                                         }
                                       });
                                       _repository.markAsRead(item.id, token);
@@ -405,8 +571,21 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                                     }
                                   },
                                   itemBuilder: (context) => [
-                                    PopupMenuItem(value: 'toggle', child: Text(item.isRead ? 'Mark as Unread' : 'Mark as Read')),
-                                    const PopupMenuItem(value: 'delete', child: Text('Hide / Delete Notification', style: TextStyle(color: AppTheme.error))),
+                                    PopupMenuItem(
+                                      value: 'toggle',
+                                      child: Text(
+                                        item.isRead
+                                            ? 'Mark as Unread'
+                                            : 'Mark as Read',
+                                      ),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'delete',
+                                      child: Text(
+                                        'Hide / Delete Notification',
+                                        style: TextStyle(color: AppTheme.error),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ],
@@ -417,11 +596,18 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    item.message,
+                                    // Links become a button on the detail
+                                    // screen; never show a raw URL here.
+                                    linkInfo.text.isEmpty &&
+                                            linkInfo.links.isNotEmpty
+                                        ? 'Tap to open the link'
+                                        : linkInfo.text,
                                     style: TextStyle(
-                                      color: const Color(0xFF4B5563),
+                                      color: AppTheme.inkSoft(context),
                                       fontSize: 12,
-                                      fontWeight: item.isRead ? FontWeight.normal : FontWeight.w600,
+                                      fontWeight: item.isRead
+                                          ? FontWeight.normal
+                                          : FontWeight.w600,
                                     ),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
@@ -430,20 +616,39 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                                   Row(
                                     children: [
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
                                         decoration: BoxDecoration(
-                                          color: AppTheme.primary.withValues(alpha: 0.08),
-                                          borderRadius: BorderRadius.circular(6),
+                                          color: AppTheme.primary.withValues(
+                                            alpha: 0.08,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
                                         ),
                                         child: Text(
                                           item.category,
-                                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppTheme.primary,
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(width: 8),
-                                      Text(
-                                        timeAgoStr,
-                                        style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 10, fontWeight: FontWeight.w500),
+                                      Flexible(
+                                        child: Text(
+                                          timeAgoStr,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Color(0xFF9CA3AF),
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),

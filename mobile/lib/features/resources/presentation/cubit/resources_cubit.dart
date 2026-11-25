@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:lms/core/network/api_exception.dart';
 import 'package:lms/features/courses/data/models/batch_model.dart';
 import 'package:lms/features/resources/data/models/resource.dart';
 import 'package:lms/features/resources/data/repositories/resources_repository.dart';
@@ -13,6 +14,7 @@ class ResourcesState extends Equatable {
     this.myBatches = const [],
     this.selectedSection = 'global',
     this.error,
+    this.locked = false,
   });
 
   final ResourcesStatus status;
@@ -21,12 +23,17 @@ class ResourcesState extends Equatable {
   final String selectedSection; // 'global' or batch ID
   final String? error;
 
+  /// The server refused (403): the student's courses do not include study
+  /// material. Shown as a friendly "not in your plan" state, not an error.
+  final bool locked;
+
   ResourcesState copyWith({
     ResourcesStatus? status,
     List<Resource>? resources,
     List<BatchModel>? myBatches,
     String? selectedSection,
     String? error,
+    bool locked = false,
   }) {
     return ResourcesState(
       status: status ?? this.status,
@@ -34,17 +41,25 @@ class ResourcesState extends Equatable {
       myBatches: myBatches ?? this.myBatches,
       selectedSection: selectedSection ?? this.selectedSection,
       error: error,
+      locked: locked,
     );
   }
 
   @override
-  List<Object?> get props => [status, resources, myBatches, selectedSection, error];
+  List<Object?> get props => [
+    status,
+    resources,
+    myBatches,
+    selectedSection,
+    error,
+    locked,
+  ];
 }
 
 class ResourcesCubit extends Cubit<ResourcesState> {
   ResourcesCubit({required ResourcesRepository resourcesRepository})
-      : _resourcesRepository = resourcesRepository,
-        super(const ResourcesState());
+    : _resourcesRepository = resourcesRepository,
+      super(const ResourcesState());
 
   final ResourcesRepository _resourcesRepository;
 
@@ -53,7 +68,14 @@ class ResourcesCubit extends Cubit<ResourcesState> {
     try {
       final results = await Future.wait([
         _resourcesRepository.getResources(token),
-        if (token.isNotEmpty) _resourcesRepository.getMyBatches(token) else Future.value(<BatchModel>[]),
+        // The batch chips are optional: their failure must not hide the
+        // materials themselves.
+        if (token.isNotEmpty)
+          _resourcesRepository
+              .getMyBatches(token)
+              .catchError((Object _) => <BatchModel>[])
+        else
+          Future.value(<BatchModel>[]),
       ]);
 
       final resources = results[0] as List<Resource>;
@@ -64,14 +86,26 @@ class ResourcesCubit extends Cubit<ResourcesState> {
         defaultSection = batches[0].id;
       }
 
-      emit(state.copyWith(
-        status: ResourcesStatus.success,
-        resources: resources,
-        myBatches: batches,
-        selectedSection: defaultSection,
-      ));
+      emit(
+        state.copyWith(
+          status: ResourcesStatus.success,
+          resources: resources,
+          myBatches: batches,
+          selectedSection: defaultSection,
+        ),
+      );
+    } on ApiException catch (e) {
+      emit(
+        state.copyWith(
+          status: ResourcesStatus.failure,
+          error: e.message,
+          locked: e.statusCode == 403,
+        ),
+      );
     } catch (e) {
-      emit(state.copyWith(status: ResourcesStatus.failure, error: e.toString()));
+      emit(
+        state.copyWith(status: ResourcesStatus.failure, error: e.toString()),
+      );
     }
   }
 

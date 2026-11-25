@@ -35,7 +35,10 @@ class ZoomService {
         if (appUri != null) {
           bool openedApp = false;
           try {
-            openedApp = await launchUrl(appUri, mode: LaunchMode.externalNonBrowserApplication);
+            openedApp = await launchUrl(
+              appUri,
+              mode: LaunchMode.externalNonBrowserApplication,
+            );
           } catch (_) {
             // Android throws ACTIVITY_NOT_FOUND instead of returning false when
             // Zoom is not installed. Continue to the app-store fallback.
@@ -47,7 +50,14 @@ class ZoomService {
         // a browser opened it even though no Zoom client joined the meeting.
         // A failed Zoom deep-link must take the learner to the install page.
         final storeOpened = await _openZoomStore();
-        if (context.mounted && !storeOpened) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Zoom is required to join this class. Please install or update it.')));
+        if (context.mounted && !storeOpened)
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Zoom is required to join this class. Please install or update it.',
+              ),
+            ),
+          );
         return;
       }
 
@@ -72,11 +82,28 @@ class ZoomService {
   Future<bool> _openZoomStore() async {
     const tracking = 'utm_source=prepzo&utm_medium=live_class&utm_campaign=zoom_join';
     if (Platform.isAndroid) {
-      final market = Uri.parse('market://details?id=us.zoom.videomeetings&$tracking');
-      if (await launchUrl(market, mode: LaunchMode.externalNonBrowserApplication)) return true;
-      return launchUrl(Uri.parse('https://play.google.com/store/apps/details?id=us.zoom.videomeetings&$tracking'), mode: LaunchMode.externalApplication);
+      final market = Uri.parse(
+        'market://details?id=us.zoom.videomeetings&$tracking',
+      );
+      if (await launchUrl(
+        market,
+        mode: LaunchMode.externalNonBrowserApplication,
+      ))
+        return true;
+      return launchUrl(
+        Uri.parse(
+          'https://play.google.com/store/apps/details?id=us.zoom.videomeetings&$tracking',
+        ),
+        mode: LaunchMode.externalApplication,
+      );
     }
-    if (Platform.isIOS) return launchUrl(Uri.parse('https://apps.apple.com/app/zoom-workplace/id546505307?$tracking'), mode: LaunchMode.externalApplication);
+    if (Platform.isIOS)
+      return launchUrl(
+        Uri.parse(
+          'https://apps.apple.com/app/zoom-workplace/id546505307?$tracking',
+        ),
+        mode: LaunchMode.externalApplication,
+      );
     return false;
   }
 

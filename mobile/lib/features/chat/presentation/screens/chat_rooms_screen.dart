@@ -8,7 +8,7 @@ import 'package:lms/routes/app_router.dart';
 
 class ChatRoomsScreen extends StatefulWidget {
   const ChatRoomsScreen({super.key, this.drawer});
-  
+
   final Widget? drawer;
 
   @override
@@ -27,7 +27,9 @@ class _ChatRoomsScreenState extends State<ChatRoomsScreen> {
     context.read<ChatCubit>().loadTeachers(token);
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) {
         return BlocBuilder<ChatCubit, ChatState>(
           builder: (context, state) {
@@ -37,12 +39,17 @@ class _ChatRoomsScreenState extends State<ChatRoomsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Start New Chat', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Start New Chat',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 10),
                   const Text('Select a teacher to start chatting:'),
                   const SizedBox(height: 20),
                   if (state.teachers.isEmpty)
-                    const Expanded(child: Center(child: CircularProgressIndicator()))
+                    const Expanded(
+                      child: Center(child: CircularProgressIndicator()),
+                    )
                   else
                     Expanded(
                       child: ListView.separated(
@@ -51,16 +58,28 @@ class _ChatRoomsScreenState extends State<ChatRoomsScreen> {
                         itemBuilder: (context, index) {
                           final teacher = state.teachers[index];
                           final id = teacher['_id'] ?? teacher['id'];
-                          final name = '${teacher['firstName'] ?? ''} ${teacher['lastName'] ?? ''}'.trim();
+                          final name =
+                              '${teacher['firstName'] ?? ''} ${teacher['lastName'] ?? ''}'
+                                  .trim();
                           return ListTile(
-                            leading: const CircleAvatar(child: Icon(Icons.person)),
-                            title: Text(name.isNotEmpty ? name : 'Unknown Teacher'),
+                            leading: const CircleAvatar(
+                              child: Icon(Icons.person),
+                            ),
+                            title: Text(
+                              name.isNotEmpty ? name : 'Unknown Teacher',
+                            ),
                             subtitle: Text(teacher['email'] ?? ''),
                             onTap: () async {
                               Navigator.pop(ctx);
-                              final newRoom = await context.read<ChatCubit>().createRoom(token, id);
+                              final newRoom = await context
+                                  .read<ChatCubit>()
+                                  .createRoom(token, id);
                               if (newRoom != null && mounted) {
-                                Navigator.pushNamed(context, AppRoutes.chatRoom, arguments: newRoom);
+                                Navigator.pushNamed(
+                                  context,
+                                  AppRoutes.chatRoom,
+                                  arguments: newRoom,
+                                );
                               }
                             },
                           );
@@ -96,7 +115,12 @@ class _ChatRoomsScreenState extends State<ChatRoomsScreen> {
           }
 
           if (state.error != null) {
-            return Center(child: Text(state.error!, style: const TextStyle(color: AppTheme.error)));
+            return Center(
+              child: Text(
+                state.error!,
+                style: const TextStyle(color: AppTheme.error),
+              ),
+            );
           }
 
           if (state.rooms.isEmpty) {
@@ -114,13 +138,17 @@ class _ChatRoomsScreenState extends State<ChatRoomsScreen> {
               String getChatName() {
                 if (room.type.toUpperCase() == 'GROUP') return room.name;
                 try {
-                  final currentUserId = context.read<AuthBloc>().state.session?.user.id ?? '';
-                  final other = room.participants.firstWhere((p) => p.id != currentUserId);
+                  final currentUserId =
+                      context.read<AuthBloc>().state.session?.user.id ?? '';
+                  final other = room.participants.firstWhere(
+                    (p) => p.id != currentUserId,
+                  );
                   return '${other.name} (${other.role.toUpperCase()})';
                 } catch (_) {
                   return 'Direct Message';
                 }
               }
+
               final chatTitle = getChatName();
               return Material(
                 color: Colors.transparent,
@@ -129,10 +157,16 @@ class _ChatRoomsScreenState extends State<ChatRoomsScreen> {
                     backgroundColor: AppTheme.primary.withValues(alpha: 0.1),
                     child: Text(
                       chatTitle.isNotEmpty ? chatTitle[0].toUpperCase() : 'U',
-                      style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: AppTheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                  title: Text(chatTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  title: Text(
+                    chatTitle,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   subtitle: Text(
                     'Tap to view ${room.type.toLowerCase()} chat',
                     maxLines: 1,
@@ -147,7 +181,11 @@ class _ChatRoomsScreenState extends State<ChatRoomsScreen> {
                           ),
                           child: Text(
                             room.unreadCount.toString(),
-                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         )
                       : null,

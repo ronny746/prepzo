@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
+import 'package:lms/core/services/student_data_refresh.dart';
 import 'package:lms/core/theme/app_theme.dart';
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:lms/features/dashboard/data/repositories/dashboard_repository.dart';
@@ -52,6 +53,20 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
   void initState() {
     super.initState();
     _loadTopicFlags();
+    // This tab is kept alive, so reload when the student comes back from a
+    // test (QA 6.4: Progress stayed empty after the first test).
+    studentDataRefreshTick.addListener(_onStudentDataChanged);
+  }
+
+  @override
+  void dispose() {
+    studentDataRefreshTick.removeListener(_onStudentDataChanged);
+    super.dispose();
+  }
+
+  void _onStudentDataChanged() {
+    if (!mounted) return;
+    _handleRefresh();
   }
 
   @override
@@ -66,26 +81,12 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
     _wasVisible = visible;
   }
 
-  /// Accuracy = correct / attempted * 100 from per-subject counts. Never the
-  /// score percentage, which goes negative with negative marking.
-  String _accuracyFromSubjects(List<dynamic> subjects) {
-    int attempted = 0;
-    int correct = 0;
-    for (final s in subjects) {
-      if (s is! Map) continue;
-      attempted += int.tryParse(s['attempted']?.toString() ?? '') ?? 0;
-      correct += int.tryParse(s['correct']?.toString() ?? '') ?? 0;
-    }
-    final acc = attempted > 0 ? correct / attempted * 100 : 0.0;
-    return acc.toStringAsFixed(2);
-  }
-
   void _loadTopicFlags() {
     final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
     if (token.isNotEmpty) {
       _flagsFuture = context.read<DashboardRepository>().getTopicFlags(
-            token: token,
-          );
+        token: token,
+      );
     }
   }
 
@@ -103,18 +104,18 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppTheme.page(context),
       appBar: AppBar(
         title: Text(
           'Progress & Results',
           style: TextStyle(
             fontSize: 18.sp,
             fontWeight: FontWeight.w800,
-            color: const Color(0xFF0F172A),
+            color: AppTheme.ink(context),
           ),
         ),
         elevation: 0,
-        backgroundColor: Colors.white,
+        backgroundColor: AppTheme.card(context),
         surfaceTintColor: Colors.transparent,
         centerTitle: false,
       ),
@@ -123,7 +124,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
         child: RefreshIndicator(
           onRefresh: _handleRefresh,
           color: AppTheme.primary,
-          backgroundColor: Colors.white,
+          backgroundColor: AppTheme.card(context),
           child: BlocBuilder<ExamsCubit, ExamsState>(
             builder: (context, state) {
               if (state.status == ExamsStatus.loading &&
@@ -136,18 +137,63 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                 );
               }
 
+              // Load failed and nothing to show: offer a retry instead of
+              // a misleading "No Exam Records Yet".
+              if (state.status == ExamsStatus.failure &&
+                  state.performanceData.isEmpty &&
+                  state.results.isEmpty) {
+                return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(24.w, 80.h, 24.w, 24.h),
+                  children: [
+                    Icon(
+                      Icons.cloud_off_rounded,
+                      size: 40.sp,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                    SizedBox(height: 12.h),
+                    Text(
+                      'Could not load your progress',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15.sp,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.ink(context),
+                      ),
+                    ),
+                    SizedBox(height: 6.h),
+                    Text(
+                      'Check your internet connection and try again.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12.sp,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                    SizedBox(height: 16.h),
+                    Center(
+                      child: FilledButton.icon(
+                        onPressed: _handleRefresh,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Retry'),
+                      ),
+                    ),
+                  ],
+                );
+              }
+
               final performanceData = state.performanceData;
               final overall = performanceData['overall'] is Map
                   ? performanceData['overall'] as Map<String, dynamic>
                   : <String, dynamic>{};
               final List<dynamic> subjectWise =
                   performanceData['subjectWise'] is List
-                      ? performanceData['subjectWise'] as List<dynamic>
-                      : [];
+                  ? performanceData['subjectWise'] as List<dynamic>
+                  : [];
               final List<dynamic> recentExams =
                   performanceData['recentExams'] is List
-                      ? performanceData['recentExams'] as List<dynamic>
-                      : [];
+                  ? performanceData['recentExams'] as List<dynamic>
+                  : [];
 
               final dppData = performanceData['dppData'] is Map
                   ? performanceData['dppData'] as Map<String, dynamic>
@@ -157,18 +203,20 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                   : <String, dynamic>{};
               final List<dynamic> dppSubjectWise =
                   dppData['subjectWise'] is List
-                      ? dppData['subjectWise'] as List<dynamic>
-                      : [];
+                  ? dppData['subjectWise'] as List<dynamic>
+                  : [];
               final List<dynamic> recentDpps = dppData['recentDpps'] is List
                   ? dppData['recentDpps'] as List<dynamic>
                   : [];
 
-              final totalExams = int.tryParse(
+              final totalExams =
+                  int.tryParse(
                     (overall['totalExamsTaken'] ?? recentExams.length)
                         .toString(),
                   ) ??
                   0;
-              final totalDpps = int.tryParse(
+              final totalDpps =
+                  int.tryParse(
                     (dppOverall['totalDppsTaken'] ?? recentDpps.length)
                         .toString(),
                   ) ??
@@ -233,9 +281,9 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
     return Container(
       padding: EdgeInsets.all(4.w),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: AppTheme.soft(context),
         borderRadius: BorderRadius.circular(12.r),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.line(context)),
       ),
       child: Row(
         children: [
@@ -274,7 +322,11 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
         duration: const Duration(milliseconds: 150),
         padding: EdgeInsets.symmetric(vertical: 8.h),
         decoration: BoxDecoration(
-          color: isActive ? Colors.white : Colors.transparent,
+          color: isActive
+              ? (AppTheme.isDarkOf(context)
+                    ? Colors.white.withValues(alpha: 0.12)
+                    : Colors.white)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(8.r),
           boxShadow: isActive
               ? [
@@ -312,6 +364,52 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
     );
   }
 
+  /// Share of attempted questions answered right, across all exams, so the
+  /// card matches each exam's accuracy and the dashboard. `overallPercentage`
+  /// is marks after negative marking out of all marks (e.g. 6/552 = 1.09%),
+  /// which is not accuracy.
+  String _overallAccuracy(Map<String, dynamic> overall, List<dynamic> exams) {
+    final fromServer = overall['accuracy'];
+    if (fromServer != null) {
+      final v = double.tryParse(fromServer.toString());
+      if (v != null) return v.toStringAsFixed(1);
+    }
+    var correct = 0;
+    var attempted = 0;
+    for (final e in exams) {
+      if (e is! Map) continue;
+      final c = int.tryParse(e['totalCorrect']?.toString() ?? '') ?? 0;
+      final w = int.tryParse(e['totalWrong']?.toString() ?? '') ?? 0;
+      correct += c;
+      attempted += c + w;
+    }
+    if (attempted > 0) return (correct / attempted * 100).toStringAsFixed(1);
+    // No attempted questions: accuracy is 0, never a negative marks-based
+    // percentage (QA 6.5).
+    return '0.0';
+  }
+
+  /// DPP accuracy = correct / attempted from the subject breakdown. The
+  /// server's `overallPercentage` is score-based and goes negative with
+  /// negative marking (QA 6.5), so it is only a clamped fallback.
+  String _dppAccuracy(
+    Map<String, dynamic> dppOverall,
+    List<dynamic> dppSubjectWise,
+  ) {
+    var correct = 0;
+    var attempted = 0;
+    for (final s in dppSubjectWise) {
+      if (s is! Map) continue;
+      correct += int.tryParse('${s['correct'] ?? 0}') ?? 0;
+      attempted += int.tryParse('${s['attempted'] ?? 0}') ?? 0;
+    }
+    if (attempted > 0) {
+      return (correct / attempted * 100).clamp(0, 100).toStringAsFixed(1);
+    }
+    final pct = double.tryParse('${dppOverall['overallPercentage'] ?? 0}') ?? 0;
+    return pct.clamp(0, 100).toStringAsFixed(1);
+  }
+
   // --- EXAMS TAB CONTENT ---
   Widget _buildExamsTabContent({
     required Map<String, dynamic> overall,
@@ -327,12 +425,13 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
       return _buildEmptyTabState(
         icon: PhosphorIcons.fileTextBold,
         title: 'No Exam Records Yet',
-        message: 'Your scores and subject analysis will appear here once you complete a test.',
+        message:
+            'Your scores and subject analysis will appear here once you complete a test.',
       );
     }
 
     final avgScore = (overall['averageScore'] ?? '0').toString();
-    final overallAcc = _accuracyFromSubjects(subjectWise);
+    final overallAcc = _overallAccuracy(overall, recentExams);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -388,12 +487,13 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
       return _buildEmptyTabState(
         icon: PhosphorIcons.targetBold,
         title: 'No DPP Sessions Yet',
-        message: 'Complete daily practice sets to track your practice score and accuracy.',
+        message:
+            'Complete daily practice sets to track your practice score and accuracy.',
       );
     }
 
     final avgScore = (dppOverall['averageScore'] ?? '0').toString();
-    final overallAcc = _accuracyFromSubjects(dppSubjectWise);
+    final overallAcc = _dppAccuracy(dppOverall, dppSubjectWise);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -497,9 +597,9 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 12.h),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card(context),
         borderRadius: BorderRadius.circular(12.r),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.line(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.02),
@@ -543,7 +643,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
               style: TextStyle(
                 fontSize: 16.sp,
                 fontWeight: FontWeight.w800,
-                color: const Color(0xFF0F172A),
+                color: AppTheme.ink(context),
                 letterSpacing: -0.3,
               ),
             ),
@@ -559,7 +659,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
       style: TextStyle(
         fontSize: 14.sp,
         fontWeight: FontWeight.w800,
-        color: const Color(0xFF0F172A),
+        color: AppTheme.ink(context),
         letterSpacing: -0.2,
       ),
     );
@@ -572,9 +672,9 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
         width: double.infinity,
         padding: EdgeInsets.all(16.w),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppTheme.card(context),
           borderRadius: BorderRadius.circular(12.r),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: AppTheme.line(context)),
         ),
         child: Center(
           child: Text(
@@ -608,10 +708,10 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
         return Container(
           margin: EdgeInsets.only(bottom: 8.h),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppTheme.card(context),
             borderRadius: BorderRadius.circular(12.r),
             border: Border.all(
-              color: isExpanded ? AppTheme.primary : const Color(0xFFE2E8F0),
+              color: isExpanded ? AppTheme.primary : AppTheme.line(context),
               width: isExpanded ? 1.2 : 1.0,
             ),
             boxShadow: [
@@ -655,7 +755,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                           style: TextStyle(
                             fontSize: 13.sp,
                             fontWeight: FontWeight.w700,
-                            color: const Color(0xFF0F172A),
+                            color: AppTheme.ink(context),
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -703,14 +803,14 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
               if (isExpanded)
                 Container(
                   padding: EdgeInsets.all(10.w),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF8FAFC),
+                  decoration: BoxDecoration(
+                    color: AppTheme.soft(context),
                     borderRadius: BorderRadius.only(
                       bottomLeft: Radius.circular(12),
                       bottomRight: Radius.circular(12),
                     ),
                     border: Border(
-                      top: BorderSide(color: Color(0xFFE2E8F0)),
+                      top: BorderSide(color: AppTheme.line(context)),
                     ),
                   ),
                   child: Column(
@@ -718,8 +818,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                       final Map<String, dynamic> topMap = topNode is Map
                           ? Map<String, dynamic>.from(topNode)
                           : {};
-                      final topicName =
-                          topMap['topic']?.toString() ?? 'Topic';
+                      final topicName = topMap['topic']?.toString() ?? 'Topic';
                       final topicScore =
                           topMap['marksObtained']?.toString() ?? '0';
                       final topicTotal =
@@ -732,16 +831,16 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                       final isWeak = accuracyVal < 50.0;
                       final List<dynamic> difficulties =
                           topMap['difficulties'] is List
-                              ? topMap['difficulties'] as List<dynamic>
-                              : [];
+                          ? topMap['difficulties'] as List<dynamic>
+                          : [];
 
                       return Container(
                         margin: EdgeInsets.only(bottom: 8.h),
                         padding: EdgeInsets.all(10.w),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: AppTheme.card(context),
                           borderRadius: BorderRadius.circular(10.r),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          border: Border.all(color: AppTheme.line(context)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -757,7 +856,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                                           style: TextStyle(
                                             fontWeight: FontWeight.w700,
                                             fontSize: 11.5.sp,
-                                            color: const Color(0xFF0F172A),
+                                            color: AppTheme.ink(context),
                                           ),
                                           overflow: TextOverflow.ellipsis,
                                         ),
@@ -771,8 +870,9 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                                           ),
                                           decoration: BoxDecoration(
                                             color: const Color(0xFFFEF2F2),
-                                            borderRadius:
-                                                BorderRadius.circular(4.r),
+                                            borderRadius: BorderRadius.circular(
+                                              4.r,
+                                            ),
                                             border: Border.all(
                                               color: const Color(0xFFFCA5A5),
                                             ),
@@ -795,8 +895,8 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                                   style: TextStyle(
                                     fontSize: 10.sp,
                                     fontWeight: FontWeight.w700,
-                                    color: (double.tryParse(topicScore) ?? 0) <
-                                            0
+                                    color:
+                                        (double.tryParse(topicScore) ?? 0) < 0
                                         ? const Color(0xFFDC2626)
                                         : AppTheme.primary,
                                   ),
@@ -805,9 +905,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                             ),
                             SizedBox(height: 8.h),
                             Row(
-                              children: ['Easy', 'Medium', 'Hard'].map((
-                                diff,
-                              ) {
+                              children: ['Easy', 'Medium', 'Hard'].map((diff) {
                                 final diffNode = difficulties.firstWhere(
                                   (d) => d is Map && d['difficulty'] == diff,
                                   orElse: () => {
@@ -822,8 +920,8 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                                 );
                                 final Map<String, dynamic> diffMap =
                                     diffNode is Map
-                                        ? Map<String, dynamic>.from(diffNode)
-                                        : {};
+                                    ? Map<String, dynamic>.from(diffNode)
+                                    : {};
                                 return Expanded(
                                   child: _buildDifficultyBadgeCard(
                                     diff,
@@ -849,8 +947,8 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
     final Color badgeColor = diff == 'Easy'
         ? const Color(0xFF059669)
         : (diff == 'Medium'
-            ? const Color(0xFFD97706)
-            : const Color(0xFFDC2626));
+              ? const Color(0xFFD97706)
+              : const Color(0xFFDC2626));
 
     final int correct = int.tryParse(data['correct']?.toString() ?? '0') ?? 0;
     final int wrong = int.tryParse(data['wrong']?.toString() ?? '0') ?? 0;
@@ -863,9 +961,9 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
       margin: EdgeInsets.symmetric(horizontal: 2.w),
       padding: EdgeInsets.all(6.w),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: AppTheme.soft(context),
         borderRadius: BorderRadius.circular(6.r),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.line(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -919,7 +1017,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
             style: TextStyle(
               fontSize: 8.sp,
               fontWeight: FontWeight.w800,
-              color: const Color(0xFF0F172A),
+              color: AppTheme.ink(context),
             ),
           ),
         ],
@@ -938,17 +1036,14 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
         width: double.infinity,
         padding: EdgeInsets.all(16.w),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppTheme.card(context),
           borderRadius: BorderRadius.circular(12.r),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: AppTheme.line(context)),
         ),
         child: Center(
           child: Text(
             'No evaluated tests found.',
-            style: TextStyle(
-              color: const Color(0xFF64748B),
-              fontSize: 12.sp,
-            ),
+            style: TextStyle(color: const Color(0xFF64748B), fontSize: 12.sp),
           ),
         ),
       );
@@ -986,26 +1081,26 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
           // else: nothing attempted -> 0; falling back to score/total made
           // negative-marked tests show a negative "accuracy".
         }
-        // ExamResultModel carries no attempt counts, so accuracy stays 0.
+        accuracy = accuracy.clamp(0, 100).toDouble();
 
         final Color accuracyColor = accuracy >= 80
             ? const Color(0xFF059669)
             : (accuracy >= 50
-                ? const Color(0xFFD97706)
-                : const Color(0xFFDC2626));
+                  ? const Color(0xFFD97706)
+                  : const Color(0xFFDC2626));
         final Color accuracyBg = accuracy >= 80
             ? const Color(0xFFECFDF5)
             : (accuracy >= 50
-                ? const Color(0xFFFFFBEB)
-                : const Color(0xFFFEF2F2));
+                  ? const Color(0xFFFFFBEB)
+                  : const Color(0xFFFEF2F2));
 
         return Container(
           margin: EdgeInsets.only(bottom: 8.h),
           padding: EdgeInsets.all(12.w),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppTheme.card(context),
             borderRadius: BorderRadius.circular(12.r),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: AppTheme.line(context)),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.02),
@@ -1025,7 +1120,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 12.5.sp,
-                        color: const Color(0xFF0F172A),
+                        color: AppTheme.ink(context),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1033,12 +1128,16 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                     SizedBox(height: 2.h),
                     Row(
                       children: [
-                        Text(
-                          type,
-                          style: TextStyle(
-                            color: const Color(0xFF64748B),
-                            fontSize: 9.5.sp,
-                            fontWeight: FontWeight.w600,
+                        Flexible(
+                          child: Text(
+                            type,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: const Color(0xFF64748B),
+                              fontSize: 9.5.sp,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                         if (dateStr.isNotEmpty) ...[
@@ -1141,17 +1240,14 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
         width: double.infinity,
         padding: EdgeInsets.all(16.w),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppTheme.card(context),
           borderRadius: BorderRadius.circular(12.r),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: AppTheme.line(context)),
         ),
         child: Center(
           child: Text(
             'No completed DPPs found.',
-            style: TextStyle(
-              color: const Color(0xFF64748B),
-              fontSize: 12.sp,
-            ),
+            style: TextStyle(color: const Color(0xFF64748B), fontSize: 12.sp),
           ),
         ),
       );
@@ -1162,8 +1258,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
         final Map<String, dynamic> dppMap = item is Map
             ? Map<String, dynamic>.from(item)
             : {};
-        final title =
-            dppMap['title']?.toString() ?? 'DPP Practice Session';
+        final title = dppMap['title']?.toString() ?? 'DPP Practice Session';
         final subject = dppMap['subject']?.toString() ?? 'General';
         final score = dppMap['score']?.toString() ?? '0';
         final totalMarks = dppMap['totalMarks']?.toString() ?? '0';
@@ -1175,25 +1270,27 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
             : (dppMap['percentage'] ?? dppMap['accuracy'] ?? '0').toString();
         final dateStr = dppMap['date']?.toString() ?? '';
 
-        final double numPct = double.tryParse(percentage) ?? 0;
+        final double numPct = (double.tryParse(percentage) ?? 0)
+            .clamp(0, 100)
+            .toDouble();
         final Color accColor = numPct >= 70
             ? const Color(0xFF059669)
             : (numPct >= 40
-                ? const Color(0xFFD97706)
-                : const Color(0xFFDC2626));
+                  ? const Color(0xFFD97706)
+                  : const Color(0xFFDC2626));
         final Color accBg = numPct >= 70
             ? const Color(0xFFECFDF5)
             : (numPct >= 40
-                ? const Color(0xFFFFFBEB)
-                : const Color(0xFFFEF2F2));
+                  ? const Color(0xFFFFFBEB)
+                  : const Color(0xFFFEF2F2));
 
         return Container(
           margin: EdgeInsets.only(bottom: 8.h),
           padding: EdgeInsets.all(12.w),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppTheme.card(context),
             borderRadius: BorderRadius.circular(12.r),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: AppTheme.line(context)),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.02),
@@ -1213,7 +1310,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 12.5.sp,
-                        color: const Color(0xFF0F172A),
+                        color: AppTheme.ink(context),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1221,12 +1318,16 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                     SizedBox(height: 2.h),
                     Row(
                       children: [
-                        Text(
-                          subject,
-                          style: TextStyle(
-                            color: const Color(0xFF64748B),
-                            fontSize: 9.5.sp,
-                            fontWeight: FontWeight.w600,
+                        Flexible(
+                          child: Text(
+                            subject,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: const Color(0xFF64748B),
+                              fontSize: 9.5.sp,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                         if (dateStr.isNotEmpty) ...[
@@ -1265,7 +1366,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                             ),
                           ),
                           child: Text(
-                            '$percentage%',
+                            '${numPct.round()}%',
                             style: TextStyle(
                               color: accColor,
                               fontWeight: FontWeight.w800,
@@ -1360,9 +1461,9 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                 width: double.infinity,
                 padding: EdgeInsets.all(16.w),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppTheme.card(context),
                   borderRadius: BorderRadius.circular(12.r),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: AppTheme.line(context)),
                 ),
                 child: Center(
                   child: Text(
@@ -1388,13 +1489,11 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                 final Color color = level == 'RED'
                     ? const Color(0xFFDC2626)
                     : (level == 'YELLOW'
-                        ? const Color(0xFFD97706)
-                        : const Color(0xFF059669));
+                          ? const Color(0xFFD97706)
+                          : const Color(0xFF059669));
                 final String label = level == 'RED'
                     ? 'Needs remedy'
-                    : (level == 'YELLOW'
-                        ? 'Practice more'
-                        : 'Mastered');
+                    : (level == 'YELLOW' ? 'Practice more' : 'Mastered');
 
                 final remedy = flag['remedialSessionId'];
                 final String? remedySessionId = remedy is Map
@@ -1404,7 +1503,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                 return Container(
                   padding: EdgeInsets.all(10.w),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppTheme.card(context),
                     borderRadius: BorderRadius.circular(10.r),
                     border: Border.all(
                       color: color.withValues(alpha: 0.25),
@@ -1431,7 +1530,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                               style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 12.sp,
-                                color: const Color(0xFF0F172A),
+                                color: AppTheme.ink(context),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -1453,7 +1552,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            '${flag['percentage'] ?? 0}%',
+                            '${(num.tryParse('${flag['percentage'] ?? 0}') ?? 0).clamp(0, 100).round()}%',
                             style: TextStyle(
                               color: color,
                               fontSize: 14.sp,
@@ -1471,7 +1570,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                                   subjectId: '',
                                   subjectName:
                                       flag['subjectName']?.toString() ??
-                                          'Subject',
+                                      'Subject',
                                   date: DateTime.now(),
                                   durationMinutes: 20,
                                   totalQuestions: 10,
@@ -1485,9 +1584,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
                                   context,
                                   MaterialPageRoute(
                                     builder: (context) =>
-                                        DppPracticePlayerScreen(
-                                      exam: mockExam,
-                                    ),
+                                        DppPracticePlayerScreen(exam: mockExam),
                                   ),
                                 );
                               },
@@ -1539,9 +1636,9 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
       width: double.infinity,
       padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 24.h),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card(context),
         borderRadius: BorderRadius.circular(14.r),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.line(context)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1554,11 +1651,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
               shape: BoxShape.circle,
             ),
             child: Center(
-              child: PhosphorIcon(
-                icon,
-                color: AppTheme.primary,
-                size: 20.sp,
-              ),
+              child: PhosphorIcon(icon, color: AppTheme.primary, size: 20.sp),
             ),
           ),
           SizedBox(height: 10.h),
@@ -1567,7 +1660,7 @@ class _StudentPerformanceViewState extends State<_StudentPerformanceView> {
             style: TextStyle(
               fontSize: 13.sp,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFF0F172A),
+              color: AppTheme.ink(context),
             ),
             textAlign: TextAlign.center,
           ),

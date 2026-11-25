@@ -50,21 +50,29 @@ class AppNotificationModel {
     return AppNotificationModel(
       id: (json['_id'] ?? json['id'] ?? '').toString(),
       title: json['title']?.toString() ?? 'Notification',
-      message: json['message']?.toString() ?? json['description']?.toString() ?? '',
-      category: _categoryLabel(source) ?? json['category']?.toString() ?? json['type']?.toString() ?? 'System',
+      message:
+          json['message']?.toString() ?? json['description']?.toString() ?? '',
+      category:
+          _categoryLabel(source) ??
+          json['category']?.toString() ??
+          json['type']?.toString() ??
+          'System',
       createdAt: parsedDate,
       isRead: json['isRead'] == true || json['read'] == true,
-      actionUrl: json['actionUrl']?.toString() ?? metadata['actionUrl']?.toString() ?? metadata['meetingLink']?.toString(),
+      actionUrl:
+          json['actionUrl']?.toString() ??
+          metadata['actionUrl']?.toString() ??
+          metadata['meetingLink']?.toString(),
     );
   }
 
   static String? _categoryLabel(String? source) => switch (source) {
-        'announcement' => 'Announcement',
-        'course_enrollment' => 'Course',
-        'mentor_session' => 'Mentor Session',
-        'attendance_late' || 'attendance_absent' => 'Attendance',
-        _ => null,
-      };
+    'announcement' => 'Announcement',
+    'course_enrollment' => 'Course',
+    'mentor_session' => 'Mentor Session',
+    'attendance_late' || 'attendance_absent' => 'Attendance',
+    _ => null,
+  };
 
   Map<String, dynamic> toJson() {
     return {

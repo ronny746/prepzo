@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:lms/core/config/app_config.dart';
 import 'package:lms/core/network/api_client.dart';
 import 'package:lms/core/theme/app_theme.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -53,10 +52,18 @@ class AppUpdateService {
 
   static bool isVersionOlder(String current, String target) {
     try {
-      final cParts = current.split('.').map((e) => int.tryParse(e) ?? 0).toList();
-      final tParts = target.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+      final cParts = current
+          .split('.')
+          .map((e) => int.tryParse(e) ?? 0)
+          .toList();
+      final tParts = target
+          .split('.')
+          .map((e) => int.tryParse(e) ?? 0)
+          .toList();
 
-      final maxLength = cParts.length > tParts.length ? cParts.length : tParts.length;
+      final maxLength = cParts.length > tParts.length
+          ? cParts.length
+          : tParts.length;
       for (int i = 0; i < maxLength; i++) {
         final c = i < cParts.length ? cParts[i] : 0;
         final t = i < tParts.length ? tParts[i] : 0;
@@ -67,7 +74,10 @@ class AppUpdateService {
     return false;
   }
 
-  static Future<void> checkAppUpdate(BuildContext context, {bool forceCheck = false}) async {
+  static Future<void> checkAppUpdate(
+    BuildContext context, {
+    bool forceCheck = false,
+  }) async {
     if (_hasCheckedThisSession && !forceCheck) return;
     _hasCheckedThisSession = true;
 
@@ -76,19 +86,54 @@ class AppUpdateService {
       final response = await apiClient.get('/public-settings');
       final data = response['data'] ?? response;
       if (data is Map<String, dynamic> && data['appUpdate'] != null) {
-        final updateInfo = AppUpdateInfo.fromJson(data['appUpdate'] as Map<String, dynamic>);
-        
+        final updateInfo = AppUpdateInfo.fromJson(
+          data['appUpdate'] as Map<String, dynamic>,
+        );
+
         final currentVersion = await getCurrentAppVersion();
-        final hasNewVersion = isVersionOlder(currentVersion, updateInfo.latestVersion);
-        final isMinVersionMissing = isVersionOlder(currentVersion, updateInfo.minRequiredVersion);
+        final hasNewVersion = isVersionOlder(
+          currentVersion,
+          updateInfo.latestVersion,
+        );
+        final isMinVersionMissing = isVersionOlder(
+          currentVersion,
+          updateInfo.minRequiredVersion,
+        );
         final isMandatory = updateInfo.isMandatory || isMinVersionMissing;
 
         if (hasNewVersion && context.mounted) {
-          showAppUpdateDialog(context, updateInfo: updateInfo, isMandatory: isMandatory, currentVersion: currentVersion);
+          showAppUpdateDialog(
+            context,
+            updateInfo: updateInfo,
+            isMandatory: isMandatory,
+            currentVersion: currentVersion,
+          );
         }
       }
     } catch (e) {
       debugPrint('App update check error: $e');
+    }
+  }
+
+  /// Opens this app's own store page. On Android a Play link for another
+  /// package (the server setting once pointed at
+  /// com.prepzoneet.online) is replaced with this app's id.
+  static Future<void> openStore(String configuredUrl) async {
+    var url = configuredUrl;
+    try {
+      if (Platform.isAndroid) {
+        final pkg = (await PackageInfo.fromPlatform()).packageName;
+        final configured = Uri.tryParse(configuredUrl);
+        final isPlay = configured?.host.contains('play.google.com') ?? false;
+        if (!isPlay || configured?.queryParameters['id'] != pkg) {
+          url = 'https://play.google.com/store/apps/details?id=$pkg';
+        }
+      }
+    } catch (_) {}
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('Could not open store: $e');
     }
   }
 
@@ -107,7 +152,9 @@ class AppUpdateService {
         return PopScope(
           canPop: !isMandatory,
           child: Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
             elevation: 16,
             backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
             child: Padding(
@@ -145,7 +192,9 @@ class AppUpdateService {
 
                   // Title
                   Text(
-                    isMandatory ? 'Mandatory Update Required' : 'New Update Available!',
+                    isMandatory
+                        ? 'Mandatory Update Required'
+                        : 'New Update Available!',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
@@ -157,7 +206,10 @@ class AppUpdateService {
 
                   // Version Badge
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.primary.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(8),
@@ -193,7 +245,9 @@ class AppUpdateService {
                       style: TextStyle(
                         fontSize: 12,
                         height: 1.4,
-                        color: isDark ? Colors.white70 : const Color(0xFF475569),
+                        color: isDark
+                            ? Colors.white70
+                            : const Color(0xFF475569),
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -207,15 +261,13 @@ class AppUpdateService {
                         width: double.infinity,
                         height: 46,
                         child: ElevatedButton.icon(
-                          onPressed: () async {
-                            final uri = Uri.parse(updateInfo.updateUrl);
-                            if (await canLaunchUrl(uri)) {
-                              await launchUrl(uri, mode: LaunchMode.externalApplication);
-                            }
-                          },
+                          onPressed: () =>
+                              AppUpdateService.openStore(updateInfo.updateUrl),
                           icon: const Icon(Icons.download_rounded, size: 18),
                           label: Text(
-                            isMandatory ? 'Update Now to Continue' : 'Download Update',
+                            isMandatory
+                                ? 'Update Now to Continue'
+                                : 'Download Update',
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.bold,

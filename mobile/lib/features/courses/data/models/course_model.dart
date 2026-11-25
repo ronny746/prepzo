@@ -22,17 +22,17 @@ class CourseAccessModel {
   }
 
   Map<String, dynamic> toJson() => {
-        'liveClasses': liveClasses,
-        'testSeries': testSeries,
-        'studyMaterials': studyMaterials,
-        'dpps': dpps,
-      };
+    'liveClasses': liveClasses,
+    'testSeries': testSeries,
+    'studyMaterials': studyMaterials,
+    'dpps': dpps,
+  };
 }
 
 class CourseModel {
   final String id;
 
-  /// URL name used by the website (`/course/<slug>`).
+  /// URL name used by the website (/explore-courses/<slug>).
   final String? slug;
   final String name;
   final String? subtitle;
@@ -78,8 +78,12 @@ class CourseModel {
       name: json['name']?.toString() ?? '',
       subtitle: json['subtitle']?.toString(),
       description: json['description']?.toString(),
-      fee: json['fee'] is num ? json['fee'] : (num.tryParse(json['fee']?.toString() ?? '0') ?? 0),
-      actualFee: json['actualFee'] is num ? json['actualFee'] : num.tryParse(json['actualFee']?.toString() ?? ''),
+      fee: json['fee'] is num
+          ? json['fee']
+          : (num.tryParse(json['fee']?.toString() ?? '0') ?? 0),
+      actualFee: json['actualFee'] is num
+          ? json['actualFee']
+          : num.tryParse(json['actualFee']?.toString() ?? ''),
       targetExam: json['targetExam']?.toString(),
       year: json['year'],
       tag: json['tag']?.toString(),
@@ -87,31 +91,41 @@ class CourseModel {
       badge: json['badge']?.toString(),
       color: json['color']?.toString(),
       slug: json['slug']?.toString(),
-      features: (json['features'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
-      bestFor: (json['bestFor'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
-      access: CourseAccessModel.fromJson(json['access'] as Map<String, dynamic>?),
+      features:
+          (json['features'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      bestFor:
+          (json['bestFor'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      access: CourseAccessModel.fromJson(
+        json['access'] as Map<String, dynamic>?,
+      ),
       startDate: json['startDate']?.toString(),
       endDate: json['endDate']?.toString(),
     );
   }
 
   Map<String, dynamic> toJson() => {
-        '_id': id,
-        'name': name,
-        'subtitle': subtitle,
-        'description': description,
-        'fee': fee,
-        'actualFee': actualFee,
-        'targetExam': targetExam,
-        'year': year,
-        'tag': tag,
-        'duration': duration,
-        'badge': badge,
-        'color': color,
-        'features': features,
-        'bestFor': bestFor,
-        'access': access.toJson(),
-        'startDate': startDate,
-        'endDate': endDate,
-      };
+    '_id': id,
+    'name': name,
+    'subtitle': subtitle,
+    'description': description,
+    'fee': fee,
+    'actualFee': actualFee,
+    'targetExam': targetExam,
+    'year': year,
+    'tag': tag,
+    'duration': duration,
+    'badge': badge,
+    'color': color,
+    'features': features,
+    'bestFor': bestFor,
+    'access': access.toJson(),
+    'startDate': startDate,
+    'endDate': endDate,
+  };
 }

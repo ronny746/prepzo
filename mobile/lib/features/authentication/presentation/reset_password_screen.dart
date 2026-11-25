@@ -96,7 +96,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               controller: _passwordController,
               obscureText: _obscurePassword,
               labelText: 'New Password',
-              prefixIcon: const Icon(Icons.lock_outline_rounded, color: Colors.white60),
+              prefixIcon: const Icon(
+                Icons.lock_outline_rounded,
+                color: Colors.white60,
+              ),
               suffixIcon: IconButton(
                 onPressed: () {
                   setState(() => _obscurePassword = !_obscurePassword);
@@ -123,7 +126,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               prefixIcon: const Icon(Icons.lock_rounded, color: Colors.white60),
               suffixIcon: IconButton(
                 onPressed: () {
-                  setState(() => _obscureConfirmPassword = !_obscureConfirmPassword);
+                  setState(
+                    () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                  );
                 },
                 icon: Icon(
                   _obscureConfirmPassword
@@ -143,10 +148,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               },
             ),
             const SizedBox(height: 28),
-            AuthButton(
-              text: 'Update Password',
-              onPressed: _updatePassword,
-            ),
+            AuthButton(text: 'Update Password', onPressed: _updatePassword),
           ],
         ),
       ),

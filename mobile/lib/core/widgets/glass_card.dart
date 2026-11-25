@@ -17,10 +17,9 @@ class GlassCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardColor = color ??
-        (isDark
-            ? Theme.of(context).colorScheme.surface
-            : Colors.white);
+    final cardColor =
+        color ??
+        (isDark ? Theme.of(context).colorScheme.surface : Colors.white);
 
     return Material(
       color: cardColor,

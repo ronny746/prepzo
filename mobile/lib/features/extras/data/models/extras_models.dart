@@ -23,15 +23,28 @@ class LiveClassModel {
 
   factory LiveClassModel.fromJson(Map<String, dynamic> json) {
     final tId = json['teacherId'];
-    final sId = json['subjectId'] ?? (json['classScheduleId'] != null ? json['classScheduleId']['subjectId'] : null);
-    
+    final sId =
+        json['subjectId'] ??
+        (json['classScheduleId'] != null
+            ? json['classScheduleId']['subjectId']
+            : null);
+
     return LiveClassModel(
       id: json['_id'] ?? json['id'] ?? '',
       topic: json['topic'] ?? (sId is Map ? sId['name'] : 'Unknown Topic'),
       subjectName: sId is Map ? sId['name'] ?? 'Unknown' : 'Unknown',
-      teacherName: tId is Map ? (tId['firstName'] != null ? '${tId['firstName']} ${tId['lastName']}' : tId['name']) ?? 'Unknown' : 'Unknown',
-      startTime: json['startTime'] != null ? DateTime.tryParse(json['startTime']) : null,
-      endTime: json['endTime'] != null ? DateTime.tryParse(json['endTime']) : null,
+      teacherName: tId is Map
+          ? (tId['firstName'] != null
+                    ? '${tId['firstName']} ${tId['lastName']}'
+                    : tId['name']) ??
+                'Unknown'
+          : 'Unknown',
+      startTime: json['startTime'] != null
+          ? DateTime.tryParse(json['startTime'])
+          : null,
+      endTime: json['endTime'] != null
+          ? DateTime.tryParse(json['endTime'])
+          : null,
       meetingLink: json['meetingLink'] ?? '',
       status: json['status'] ?? 'scheduled',
       participants: json['participants'] ?? [],
@@ -92,7 +105,9 @@ class FeeModel {
       id: json['_id'] ?? json['id'] ?? '',
       studentName: sId is Map ? sId['name'] ?? 'Unknown' : 'Unknown',
       amount: json['amount'] ?? 0,
-      dueDate: json['dueDate'] != null ? DateTime.tryParse(json['dueDate']) : null,
+      dueDate: json['dueDate'] != null
+          ? DateTime.tryParse(json['dueDate'])
+          : null,
       status: json['status'] ?? 'pending',
       description: json['description'] ?? '',
     );
@@ -154,7 +169,8 @@ class TransactionModel {
     if (bName.isEmpty && bId is Map) {
       final name = bId['name'] ?? '';
       final section = bId['section'];
-      bName = '$name${section != null && section.toString().isNotEmpty ? ' (Sec $section)' : ''}';
+      bName =
+          '$name${section != null && section.toString().isNotEmpty ? ' (Sec $section)' : ''}';
     }
     if (bName.isEmpty) bName = 'Enrolled Batch';
 
@@ -162,7 +178,9 @@ class TransactionModel {
     final idStr = (json['_id'] ?? json['id'] ?? '').toString();
     final txnId = (rawTxnId != null && rawTxnId.toString().isNotEmpty)
         ? rawTxnId.toString()
-        : (idStr.isNotEmpty ? 'REC_${idStr.toUpperCase().substring((idStr.length - 8).clamp(0, idStr.length))}' : 'TXN');
+        : (idStr.isNotEmpty
+              ? 'REC_${idStr.toUpperCase().substring((idStr.length - 8).clamp(0, idStr.length))}'
+              : 'TXN');
 
     final rawDate = json['createdAt'] ?? json['dueDate'];
     DateTime? dt;
@@ -179,7 +197,8 @@ class TransactionModel {
       studentName: sName,
       courseName: cName,
       batchName: bName,
-      amountPaid: json['amountPaid'] ?? json['amountDue'] ?? json['amount'] ?? 0,
+      amountPaid:
+          json['amountPaid'] ?? json['amountDue'] ?? json['amount'] ?? 0,
       paymentMethod: json['paymentMethod'] ?? 'ONLINE',
       status: statusStr,
       createdAt: dt,

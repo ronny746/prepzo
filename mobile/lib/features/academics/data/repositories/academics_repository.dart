@@ -30,12 +30,16 @@ class AcademicsRepository {
     final List<AcademicTask> tasks = [];
     for (var a in assignmentsData) {
       if (a is Map<String, dynamic>) {
-        tasks.add(AcademicTask.fromJson(a, 'Assignment', subjectsMap, submissionsData));
+        tasks.add(
+          AcademicTask.fromJson(a, 'Assignment', subjectsMap, submissionsData),
+        );
       }
     }
     for (var h in homeworkData) {
       if (h is Map<String, dynamic>) {
-        tasks.add(AcademicTask.fromJson(h, 'Homework', subjectsMap, submissionsData));
+        tasks.add(
+          AcademicTask.fromJson(h, 'Homework', subjectsMap, submissionsData),
+        );
       }
     }
 
@@ -74,12 +78,16 @@ class AcademicsRepository {
     final List<AcademicTask> tasks = [];
     for (var a in assignmentsData) {
       if (a is Map<String, dynamic>) {
-        tasks.add(AcademicTask.fromJson(a, 'Assignment', subjectsMap, submissionsData));
+        tasks.add(
+          AcademicTask.fromJson(a, 'Assignment', subjectsMap, submissionsData),
+        );
       }
     }
     for (var h in homeworkData) {
       if (h is Map<String, dynamic>) {
-        tasks.add(AcademicTask.fromJson(h, 'Homework', subjectsMap, submissionsData));
+        tasks.add(
+          AcademicTask.fromJson(h, 'Homework', subjectsMap, submissionsData),
+        );
       }
     }
 
@@ -104,7 +112,7 @@ class AcademicsRepository {
     final endpoint = taskType == 'Assignment'
         ? '/assignments/$taskId/submit'
         : '/homework/$taskId/submit';
-    
+
     await _apiClient.post(
       endpoint,
       token: token,

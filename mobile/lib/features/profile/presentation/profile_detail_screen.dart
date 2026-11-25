@@ -27,7 +27,8 @@ class ProfileDetailScreen extends StatelessWidget {
 
     return BlocBuilder<ProfileCubit, ProfileState>(
       builder: (context, state) {
-        final currentProfile = state.profile ??
+        final currentProfile =
+            state.profile ??
             profile ??
             const ProfileDetails(
               id: '',
@@ -49,7 +50,9 @@ class ProfileDetailScreen extends StatelessWidget {
         final avatarImage = _getAvatarImage(currentProfile.avatarUrl);
 
         return Scaffold(
-          backgroundColor: isDark ? AppTheme.darkBackground : const Color(0xFFF8FAFC),
+          backgroundColor: isDark
+              ? AppTheme.darkBackground
+              : const Color(0xFFF8FAFC),
           appBar: AppBar(
             leading: IconButton(
               icon: const PhosphorIcon(PhosphorIcons.arrowLeft, size: 20),
@@ -74,12 +77,15 @@ class ProfileDetailScreen extends StatelessWidget {
           body: SafeArea(
             child: RefreshIndicator(
               onRefresh: () async {
-                final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
+                final token =
+                    context.read<AuthBloc>().state.session?.accessToken ?? '';
                 await context.read<ProfileCubit>().loadProfile(token);
               },
               color: AppTheme.primary,
               child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -101,22 +107,32 @@ class ProfileDetailScreen extends StatelessWidget {
                               backgroundColor: Colors.white24,
                               backgroundImage: avatarImage,
                               child: avatarImage == null
-                                  ? const PhosphorIcon(PhosphorIcons.user, size: 48, color: Colors.white)
+                                  ? const PhosphorIcon(
+                                      PhosphorIcons.user,
+                                      size: 48,
+                                      color: Colors.white,
+                                    )
                                   : null,
                             ),
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            currentProfile.name.isNotEmpty ? currentProfile.name : 'Student User',
+                            currentProfile.name.isNotEmpty
+                                ? currentProfile.name
+                                : 'Student User',
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w900,
-                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF0F172A),
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            currentProfile.email.isNotEmpty ? currentProfile.email : 'No email provided',
+                            currentProfile.email.isNotEmpty
+                                ? currentProfile.email
+                                : 'No email provided',
                             style: const TextStyle(
                               fontSize: 13,
                               color: Color(0xFF64748B),
@@ -136,11 +152,15 @@ class ProfileDetailScreen extends StatelessWidget {
                         color: isDark ? AppTheme.darkSurface : Colors.white,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2E8F0),
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : const Color(0xFFE2E8F0),
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+                            color: Colors.black.withValues(
+                              alpha: isDark ? 0.2 : 0.03,
+                            ),
                             blurRadius: 14,
                             offset: const Offset(0, 4),
                           ),
@@ -154,10 +174,16 @@ class ProfileDetailScreen extends StatelessWidget {
                               Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: AppTheme.primary.withValues(alpha: 0.1),
+                                  color: AppTheme.primary.withValues(
+                                    alpha: 0.1,
+                                  ),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                child: const PhosphorIcon(PhosphorIcons.user, color: AppTheme.primary, size: 20),
+                                child: const PhosphorIcon(
+                                  PhosphorIcons.user,
+                                  color: AppTheme.primary,
+                                  size: 20,
+                                ),
                               ),
                               const SizedBox(width: 10),
                               Text(
@@ -165,27 +191,85 @@ class ProfileDetailScreen extends StatelessWidget {
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w900,
-                                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                  color: isDark
+                                      ? Colors.white
+                                      : const Color(0xFF0F172A),
                                 ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 18),
-                          _detailRow('Full Name', currentProfile.name.isNotEmpty ? currentProfile.name : 'Not Provided', PhosphorIcons.user, isDark),
+                          _detailRow(
+                            'Full Name',
+                            currentProfile.name.isNotEmpty
+                                ? currentProfile.name
+                                : 'Not Provided',
+                            PhosphorIcons.user,
+                            isDark,
+                          ),
                           const Divider(height: 20),
-                          _detailRow('Email Address', currentProfile.email.isNotEmpty ? currentProfile.email : 'Not Provided', PhosphorIcons.envelope, isDark),
+                          _detailRow(
+                            'Email Address',
+                            currentProfile.email.isNotEmpty
+                                ? currentProfile.email
+                                : 'Not Provided',
+                            PhosphorIcons.envelope,
+                            isDark,
+                          ),
                           const Divider(height: 20),
-                          _detailRow('Mobile Number', currentProfile.mobile.isNotEmpty ? currentProfile.mobile : 'Not Provided', PhosphorIcons.phone, isDark),
+                          _detailRow(
+                            'Mobile Number',
+                            currentProfile.mobile.isNotEmpty
+                                ? currentProfile.mobile
+                                : 'Not Provided',
+                            PhosphorIcons.phone,
+                            isDark,
+                          ),
                           const Divider(height: 20),
-                          _detailRow('Class', currentProfile.studentClass.isNotEmpty ? currentProfile.studentClass : 'Not Provided', PhosphorIcons.chalkboard, isDark),
+                          _detailRow(
+                            'Class',
+                            currentProfile.studentClass.isNotEmpty
+                                ? currentProfile.studentClass
+                                : 'Not Provided',
+                            PhosphorIcons.chalkboard,
+                            isDark,
+                          ),
                           const Divider(height: 20),
-                          _detailRow('City', currentProfile.city.isNotEmpty ? currentProfile.city : 'Not Provided', PhosphorIcons.buildings, isDark),
+                          _detailRow(
+                            'City',
+                            currentProfile.city.isNotEmpty
+                                ? currentProfile.city
+                                : 'Not Provided',
+                            PhosphorIcons.buildings,
+                            isDark,
+                          ),
                           const Divider(height: 20),
-                          _detailRow('State', currentProfile.state.isNotEmpty ? currentProfile.state : 'Not Provided', PhosphorIcons.mapTrifold, isDark),
+                          _detailRow(
+                            'State',
+                            currentProfile.state.isNotEmpty
+                                ? currentProfile.state
+                                : 'Not Provided',
+                            PhosphorIcons.mapTrifold,
+                            isDark,
+                          ),
                           const Divider(height: 20),
-                          _detailRow('Gender', currentProfile.gender.isNotEmpty ? currentProfile.gender : 'Not Specified', PhosphorIcons.genderIntersex, isDark),
+                          _detailRow(
+                            'Gender',
+                            currentProfile.gender.isNotEmpty
+                                ? currentProfile.gender
+                                : 'Not Specified',
+                            PhosphorIcons.genderIntersex,
+                            isDark,
+                          ),
                           const Divider(height: 20),
-                          _detailRow('Full Address', currentProfile.address.isNotEmpty ? currentProfile.address : 'Not Provided', PhosphorIcons.mapPin, isDark),
+                          _detailRow(
+                            'Full Address',
+                            currentProfile.address.isNotEmpty
+                                ? currentProfile.address
+                                : 'Not Provided',
+                            PhosphorIcons.mapPin,
+                            isDark,
+                          ),
                         ],
                       ),
                     ),
@@ -195,14 +279,26 @@ class ProfileDetailScreen extends StatelessWidget {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: () => _navigateToEdit(context, currentProfile),
-                        icon: const PhosphorIcon(PhosphorIcons.pencilSimple, size: 18),
-                        label: const Text('Edit Profile Information', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                        onPressed: () =>
+                            _navigateToEdit(context, currentProfile),
+                        icon: const PhosphorIcon(
+                          PhosphorIcons.pencilSimple,
+                          size: 18,
+                        ),
+                        label: const Text(
+                          'Edit Profile Information',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primary,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                           elevation: 0,
                         ),
                       ),
@@ -225,10 +321,16 @@ class ProfileDetailScreen extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF1F5F9),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : const Color(0xFFF1F5F9),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: PhosphorIcon(icon, size: 16, color: isDark ? Colors.white70 : const Color(0xFF64748B)),
+          child: PhosphorIcon(
+            icon,
+            size: 16,
+            color: isDark ? Colors.white70 : const Color(0xFF64748B),
+          ),
         ),
         const SizedBox(width: 14),
         Expanded(
@@ -260,7 +362,10 @@ class ProfileDetailScreen extends StatelessWidget {
     );
   }
 
-  void _navigateToEdit(BuildContext context, ProfileDetails currentProfile) async {
+  void _navigateToEdit(
+    BuildContext context,
+    ProfileDetails currentProfile,
+  ) async {
     final cubit = context.read<ProfileCubit>();
     final authBloc = context.read<AuthBloc>();
     final token = authBloc.state.session?.accessToken ?? '';
@@ -270,7 +375,9 @@ class ProfileDetailScreen extends StatelessWidget {
       MaterialPageRoute(
         builder: (_) => BlocProvider.value(
           value: cubit,
-          child: EditProfileScreen(initialProfile: cubit.state.profile ?? currentProfile),
+          child: EditProfileScreen(
+            initialProfile: cubit.state.profile ?? currentProfile,
+          ),
         ),
       ),
     );

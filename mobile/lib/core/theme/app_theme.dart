@@ -24,6 +24,32 @@ class AppTheme {
   static const Color darkSurface = Color(0xFF0E281F); // Prepzo Deep Forest Surface
   static const Color dividerColor = Color(0x3C3C432F); // iOS thin divider
 
+  // Phone status bar + navigation bar styles. Light (cream/white) screens get
+  // dark icons; dark screens (login, splash, video) get white icons. The
+  // navigation bar is painted to match so no cream strip shows under a dark
+  // screen (and no dark strip under a light one).
+  static const Color authBackground = Color(0xFF02170F); // Prepzo Deep Forest Night
+
+  static const SystemUiOverlayStyle lightScreenSystemUi = SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark, // Android: dark icons
+    statusBarBrightness: Brightness.light, // iOS: dark icons
+    systemNavigationBarColor: background,
+    systemNavigationBarDividerColor: Colors.transparent,
+    systemNavigationBarIconBrightness: Brightness.dark,
+    systemNavigationBarContrastEnforced: false,
+  );
+
+  static const SystemUiOverlayStyle darkScreenSystemUi = SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light, // Android: white icons
+    statusBarBrightness: Brightness.dark, // iOS: white icons
+    systemNavigationBarColor: authBackground,
+    systemNavigationBarDividerColor: Colors.transparent,
+    systemNavigationBarIconBrightness: Brightness.light,
+    systemNavigationBarContrastEnforced: false,
+  );
+
   static bool isDarkOf(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark;
 
@@ -137,20 +163,18 @@ class AppTheme {
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
+        // A transparent AppBar would otherwise pick white status-bar icons
+        // (it reads "transparent" as black), which vanish on cream screens.
+        systemOverlayStyle: isDark ? darkScreenSystemUi : lightScreenSystemUi,
         foregroundColor: scheme.onSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
-        // Light screens need dark status-bar icons and vice versa; without this
-        // the clock/battery were invisible (QA Step 1 problem 1).
-        systemOverlayStyle: isDark
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
         centerTitle: false,
         titleTextStyle: TextStyle(
           color: isDark ? Colors.white : const Color(0xFF0F172A),
-          fontSize: 18.sp,
-          fontWeight: FontWeight.w900,
-          letterSpacing: -0.5,
+          fontSize: 17.sp,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.3,
           fontFamily: GoogleFonts.plusJakartaSans().fontFamily,
         ),
       ),

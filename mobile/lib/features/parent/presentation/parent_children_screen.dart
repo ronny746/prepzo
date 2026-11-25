@@ -7,7 +7,8 @@ import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:lms/features/dashboard/data/models/dashboard_models.dart';
 import 'package:lms/features/dashboard/data/repositories/dashboard_repository.dart';
 import 'package:lms/features/dashboard/presentation/cubit/parent_dashboard_cubit.dart';
-import 'package:lms/features/parent/presentation/parent_dashboard_screen.dart' show showLinkStudentModal;
+import 'package:lms/features/parent/presentation/parent_dashboard_screen.dart'
+    show showLinkStudentModal;
 
 class ParentChildrenScreen extends StatefulWidget {
   const ParentChildrenScreen({super.key, this.drawer});
@@ -29,7 +30,8 @@ class _ParentChildrenScreenState extends State<ParentChildrenScreen> {
       )..loadDashboard(token),
       child: BlocBuilder<ParentDashboardCubit, ParentDashboardState>(
         builder: (context, state) {
-          final reload = () => context.read<ParentDashboardCubit>().loadDashboard(token);
+          final reload = () =>
+              context.read<ParentDashboardCubit>().loadDashboard(token);
 
           return AppScaffold(
             title: 'My Children',
@@ -57,13 +59,16 @@ class _ParentChildrenScreenState extends State<ParentChildrenScreen> {
                         ),
                       ),
                       OutlinedButton.icon(
-                        onPressed: () => showLinkStudentModal(context, token, reload),
+                        onPressed: () =>
+                            showLinkStudentModal(context, token, reload),
                         icon: const Icon(Icons.add, size: 18),
                         label: const Text('Link Student'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppTheme.primary,
                           side: const BorderSide(color: AppTheme.primary),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
                     ],
@@ -79,7 +84,9 @@ class _ParentChildrenScreenState extends State<ParentChildrenScreen> {
                   else if (state.data == null || state.data!.children.isEmpty)
                     _buildEmptyState(context, token, reload)
                   else
-                    ...state.data!.children.map((child) => _buildChildCard(child)),
+                    ...state.data!.children.map(
+                      (child) => _buildChildCard(child),
+                    ),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -90,7 +97,11 @@ class _ParentChildrenScreenState extends State<ParentChildrenScreen> {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, String token, VoidCallback reload) {
+  Widget _buildEmptyState(
+    BuildContext context,
+    String token,
+    VoidCallback reload,
+  ) {
     return SectionCard(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
@@ -102,12 +113,20 @@ class _ParentChildrenScreenState extends State<ParentChildrenScreen> {
                 color: Color(0xFFFEE2E2),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.error_outline, size: 40, color: Colors.red),
+              child: const Icon(
+                Icons.error_outline,
+                size: 40,
+                color: Colors.red,
+              ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'No Children Linked',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.black87),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+                color: AppTheme.ink(context),
+              ),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -123,8 +142,13 @@ class _ParentChildrenScreenState extends State<ParentChildrenScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primary,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],
@@ -156,14 +180,18 @@ class _ParentChildrenScreenState extends State<ParentChildrenScreen> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
             ),
             child: Row(
               children: [
                 CircleAvatar(
                   radius: 28,
                   backgroundColor: AppTheme.primary.withValues(alpha: 0.15),
-                  backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                  backgroundImage: avatarUrl.isNotEmpty
+                      ? NetworkImage(avatarUrl)
+                      : null,
                   child: avatarUrl.isEmpty
                       ? Text(
                           name.isNotEmpty ? name[0].toUpperCase() : 'C',
@@ -182,17 +210,21 @@ class _ParentChildrenScreenState extends State<ParentChildrenScreen> {
                     children: [
                       Text(
                         name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 17,
-                          color: Colors.black87,
+                          color: AppTheme.ink(context),
                         ),
                       ),
                       if (phone.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            const Icon(Icons.phone_iphone_rounded, size: 14, color: Colors.grey),
+                            const Icon(
+                              Icons.phone_iphone_rounded,
+                              size: 14,
+                              color: Colors.grey,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               phone,
@@ -224,33 +256,56 @@ class _ParentChildrenScreenState extends State<ParentChildrenScreen> {
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.menu_book_outlined, size: 18, color: AppTheme.primary),
+                          Icon(
+                            Icons.menu_book_outlined,
+                            size: 18,
+                            color: AppTheme.primary,
+                          ),
                           SizedBox(width: 8),
-                          Text('Class / Batch', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                          Text(
+                            'Class / Batch',
+                            style: TextStyle(color: Colors.grey, fontSize: 14),
+                          ),
                         ],
                       ),
                       Text(
                         classSec,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: AppTheme.ink(context),
+                        ),
                       ),
                     ],
                   ),
                 ],
-                if (classSec.isNotEmpty && rollNo.isNotEmpty) const SizedBox(height: 12),
+                if (classSec.isNotEmpty && rollNo.isNotEmpty)
+                  const SizedBox(height: 12),
                 if (rollNo.isNotEmpty) ...[
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.assignment_turned_in_outlined, size: 18, color: Color(0xFF6B46C1)),
+                          Icon(
+                            Icons.assignment_turned_in_outlined,
+                            size: 18,
+                            color: Color(0xFF6B46C1),
+                          ),
                           SizedBox(width: 8),
-                          Text('Roll No', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                          Text(
+                            'Roll No',
+                            style: TextStyle(color: Colors.grey, fontSize: 14),
+                          ),
                         ],
                       ),
                       Text(
                         rollNo,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: AppTheme.ink(context),
+                        ),
                       ),
                     ],
                   ),

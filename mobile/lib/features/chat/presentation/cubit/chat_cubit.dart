@@ -38,8 +38,8 @@ class ChatState extends Equatable {
 
 class ChatCubit extends Cubit<ChatState> {
   ChatCubit({required ChatRepository chatRepository})
-      : _chatRepository = chatRepository,
-        super(const ChatState());
+    : _chatRepository = chatRepository,
+      super(const ChatState());
 
   final ChatRepository _chatRepository;
 

@@ -3,7 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:lms/core/theme/app_theme.dart';
 import 'package:lms/features/exams/data/models/exams_models.dart';
-import 'package:lms/features/exams/presentation/screens/parent_exam_analysis_screen.dart' show ParentExamAnalysisScreen;
+import 'package:lms/features/exams/presentation/screens/parent_exam_analysis_screen.dart'
+    show ParentExamAnalysisScreen;
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:lms/features/exams/presentation/cubit/exams_cubit.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -35,7 +36,7 @@ class _StudentResultsScreenState extends State<StudentResultsScreen> {
         final results = state.results;
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF9FAFB),
+          backgroundColor: AppTheme.page(context),
           body: RefreshIndicator(
             onRefresh: _handleRefresh,
             child: SingleChildScrollView(
@@ -60,10 +61,26 @@ class _StudentResultsScreenState extends State<StudentResultsScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            PhosphorIcon(PhosphorIcons.trophy, size: 64, color: Colors.grey.withValues(alpha: 0.3)),
+                            PhosphorIcon(
+                              PhosphorIcons.trophy,
+                              size: 64,
+                              color: Colors.grey.withValues(alpha: 0.3),
+                            ),
                             const SizedBox(height: 16),
-                            const Text('No results published yet', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111827))),
-                            const Text('Take an exam to view your score card.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                            Text(
+                              'No results published yet',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.ink(context),
+                              ),
+                            ),
+                            const Text(
+                              'Take an exam to view your score card.',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -83,7 +100,8 @@ class _StudentResultsScreenState extends State<StudentResultsScreen> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: results.length,
-                      itemBuilder: (context, index) => _ResultItemCard(result: results[index]),
+                      itemBuilder: (context, index) =>
+                          _ResultItemCard(result: results[index]),
                     ),
                   ],
                   const SizedBox(height: 40),
@@ -97,7 +115,7 @@ class _StudentResultsScreenState extends State<StudentResultsScreen> {
   }
 
   Widget _buildHeader() {
-    return const Padding(
+    return Padding(
       padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -107,7 +125,7 @@ class _StudentResultsScreenState extends State<StudentResultsScreen> {
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF111827),
+              color: AppTheme.ink(context),
               letterSpacing: -1.0,
             ),
           ),
@@ -134,10 +152,13 @@ class _OverallStatsGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final double avgScore = results.isEmpty
         ? 0.0
-        : results.map((e) => e.percentage.toDouble()).reduce((a, b) => a + b) / results.length;
+        : results.map((e) => e.percentage.toDouble()).reduce((a, b) => a + b) /
+              results.length;
     final double bestScore = results.isEmpty
         ? 0.0
-        : results.map((e) => e.percentage.toDouble()).reduce((a, b) => a > b ? a : b);
+        : results
+              .map((e) => e.percentage.toDouble())
+              .reduce((a, b) => a > b ? a : b);
 
     return GridView.count(
       crossAxisCount: 2,
@@ -163,7 +184,7 @@ class _OverallStatsGrid extends StatelessWidget {
           label: 'Tests Taken',
           value: '${results.length}',
           icon: PhosphorIcons.clipboardText,
-          color: AppTheme.secondary,
+          color: AppTheme.brandInk(context),
         ),
         _StatSummaryCard(
           label: 'Global Rank',
@@ -177,7 +198,12 @@ class _OverallStatsGrid extends StatelessWidget {
 }
 
 class _StatSummaryCard extends StatelessWidget {
-  const _StatSummaryCard({required this.label, required this.value, required this.icon, required this.color});
+  const _StatSummaryCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
   final String label, value;
   final IconData icon;
   final Color color;
@@ -187,9 +213,9 @@ class _StatSummaryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card(context),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFF3F4F6)),
+        border: Border.all(color: AppTheme.soft(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -206,10 +232,10 @@ class _StatSummaryCard extends StatelessWidget {
           const Spacer(),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w900,
-              color: Color(0xFF111827),
+              color: AppTheme.ink(context),
               letterSpacing: -0.5,
             ),
           ),
@@ -242,9 +268,9 @@ class _PerformanceLineChart extends StatelessWidget {
       height: 200,
       padding: const EdgeInsets.only(top: 24, right: 24, left: 8, bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card(context),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFF3F4F6)),
+        border: Border.all(color: AppTheme.soft(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -283,15 +309,17 @@ class _ResultItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color statusColor = result.percentage >= 70 ? AppTheme.success : (result.percentage >= 40 ? AppTheme.warning : AppTheme.error);
+    final Color statusColor = result.percentage >= 70
+        ? AppTheme.success
+        : (result.percentage >= 40 ? AppTheme.warning : AppTheme.error);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card(context),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFF3F4F6)),
+        border: Border.all(color: AppTheme.soft(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -310,7 +338,11 @@ class _ResultItemCard extends StatelessWidget {
                   color: statusColor.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: PhosphorIcon(PhosphorIcons.clipboardText, color: statusColor, size: 22),
+                child: PhosphorIcon(
+                  PhosphorIcons.clipboardText,
+                  color: statusColor,
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -319,10 +351,10 @@ class _ResultItemCard extends StatelessWidget {
                   children: [
                     Text(
                       result.examTitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 15,
-                        color: Color(0xFF111827),
+                        color: AppTheme.ink(context),
                         letterSpacing: -0.3,
                       ),
                     ),
@@ -370,7 +402,8 @@ class _ResultItemCard extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => ParentExamAnalysisScreen(examId: result.examId),
+                    builder: (context) =>
+                        ParentExamAnalysisScreen(examId: result.examId),
                   ),
                 );
               },
@@ -381,8 +414,13 @@ class _ResultItemCard extends StatelessWidget {
                 foregroundColor: AppTheme.primary,
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
               ),
             ),
           ),
@@ -402,10 +440,10 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w800,
-          color: Color(0xFF111827),
+          color: AppTheme.ink(context),
           letterSpacing: -0.4,
         ),
       ),

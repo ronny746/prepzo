@@ -27,7 +27,9 @@ class BatchModel {
     String? extractedCourseTag;
 
     if (json['courseId'] is Map<String, dynamic>) {
-      extractedCourseId = json['courseId']['_id']?.toString() ?? json['courseId']['id']?.toString();
+      extractedCourseId =
+          json['courseId']['_id']?.toString() ??
+          json['courseId']['id']?.toString();
       extractedCourseName = json['courseId']['name']?.toString();
       extractedCourseTag = json['courseId']['tag']?.toString();
     } else if (json['courseId'] != null) {
@@ -48,14 +50,14 @@ class BatchModel {
   }
 
   Map<String, dynamic> toJson() => {
-        '_id': id,
-        'name': name,
-        'section': section,
-        'courseId': courseId,
-        'courseName': courseName,
-        'courseTag': courseTag,
-        'startDate': startDate,
-        'endDate': endDate,
-        'status': status,
-      };
+    '_id': id,
+    'name': name,
+    'section': section,
+    'courseId': courseId,
+    'courseName': courseName,
+    'courseTag': courseTag,
+    'startDate': startDate,
+    'endDate': endDate,
+    'status': status,
+  };
 }

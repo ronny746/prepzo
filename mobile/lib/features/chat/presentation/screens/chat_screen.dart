@@ -17,7 +17,10 @@ class ChatScreen extends StatelessWidget {
             children: [
               Icon(Icons.chat_bubble_rounded, size: 64, color: Colors.grey),
               SizedBox(height: 16),
-              Text('Messages coming soon', style: TextStyle(color: Colors.grey)),
+              Text(
+                'Messages coming soon',
+                style: TextStyle(color: Colors.grey),
+              ),
             ],
           ),
         ),

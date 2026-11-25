@@ -1,0 +1,4 @@
+# Localization config: ARB files in lib/l10n, generated AppLocalizations class.
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart

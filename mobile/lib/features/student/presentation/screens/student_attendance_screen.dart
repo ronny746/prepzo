@@ -157,73 +157,71 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                   child: CircularProgressIndicator(color: AppTheme.primary),
                 )
               : _error != null
-                  ? _buildErrorState()
-                  : SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 16.w,
-                        vertical: 14.h,
+              ? _buildErrorState()
+              : SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 16.w,
+                    vertical: 14.h,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Top KPI Summary
+                      _buildKpiSummaryGrid(
+                        rate: rate,
+                        present: presentCount,
+                        late: lateCount,
+                        absent: absentCount,
+                        total: totalRecords,
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      SizedBox(height: 16.h),
+
+                      // Status Filter Chips
+                      _buildStatusFilterRow(isDark),
+                      SizedBox(height: 14.h),
+
+                      // Section Header
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // Top KPI Summary
-                          _buildKpiSummaryGrid(
-                            rate: rate,
-                            present: presentCount,
-                            late: lateCount,
-                            absent: absentCount,
-                            total: totalRecords,
-                          ),
-                          SizedBox(height: 16.h),
-
-                          // Status Filter Chips
-                          _buildStatusFilterRow(isDark),
-                          SizedBox(height: 14.h),
-
-                          // Section Header
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'CLASS ATTENDANCE REGISTER',
-                                style: TextStyle(
-                                  fontSize: 11.sp,
-                                  fontWeight: FontWeight.w800,
-                                  color: const Color(0xFF94A3B8),
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
-                              Text(
-                                '${filteredRows.length} classes',
-                                style: TextStyle(
-                                  fontSize: 11.sp,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFF64748B),
-                                ),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: 10.h),
-
-                          // Attendance Records List
-                          if (filteredRows.isEmpty)
-                            _buildEmptyState()
-                          else
-                            ListView.separated(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: filteredRows.length,
-                              separatorBuilder: (_, __) =>
-                                  SizedBox(height: 8.h),
-                              itemBuilder: (context, index) {
-                                return _buildAttendanceCard(
-                                    filteredRows[index]);
-                              },
+                          Text(
+                            'CLASS ATTENDANCE REGISTER',
+                            style: TextStyle(
+                              fontSize: 11.sp,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF94A3B8),
+                              letterSpacing: 0.8,
                             ),
+                          ),
+                          Text(
+                            '${filteredRows.length} classes',
+                            style: TextStyle(
+                              fontSize: 11.sp,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
                         ],
                       ),
-                    ),
+                      SizedBox(height: 10.h),
+
+                      // Attendance Records List
+                      if (filteredRows.isEmpty)
+                        _buildEmptyState()
+                      else
+                        ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: filteredRows.length,
+                          separatorBuilder: (_, __) => SizedBox(height: 8.h),
+                          itemBuilder: (context, index) {
+                            return _buildAttendanceCard(filteredRows[index]);
+                          },
+                        ),
+                    ],
+                  ),
+                ),
         ),
       ),
     );
@@ -397,10 +395,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
               borderRadius: BorderRadius.circular(20.r),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                padding: EdgeInsets.symmetric(
-                  horizontal: 12.w,
-                  vertical: 6.h,
-                ),
+                padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? AppTheme.primary
@@ -410,8 +405,8 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                     color: isSelected
                         ? AppTheme.primary
                         : (isDark
-                            ? Colors.white.withValues(alpha: 0.08)
-                            : const Color(0xFFE2E8F0)),
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : const Color(0xFFE2E8F0)),
                   ),
                 ),
                 child: Text(
@@ -421,9 +416,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                     fontWeight: FontWeight.w700,
                     color: isSelected
                         ? Colors.white
-                        : (isDark
-                            ? Colors.white70
-                            : const Color(0xFF475569)),
+                        : (isDark ? Colors.white70 : const Color(0xFF475569)),
                   ),
                 ),
               ),
@@ -445,10 +438,11 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     final classTopic = (reg['classTopic'] ?? reg['title'] ?? 'Live Class')
         .toString();
     final subject = (reg['subject'] ?? 'General').toString();
-    final batch = (reg['batchId'] is Map
-            ? reg['batchId']['name']
-            : (reg['batchName'] ?? ''))
-        .toString();
+    final batch =
+        (reg['batchId'] is Map
+                ? reg['batchId']['name']
+                : (reg['batchName'] ?? ''))
+            .toString();
 
     // Date formatting
     String dateStr = '—';
@@ -500,7 +494,9 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     }
 
     final firstJoinTime = rec['firstJoinTime']?.toString();
-    final joinEvents = rec['joinEvents'] is List ? rec['joinEvents'] as List : [];
+    final joinEvents = rec['joinEvents'] is List
+        ? rec['joinEvents'] as List
+        : [];
 
     return Container(
       decoration: BoxDecoration(
@@ -549,34 +545,44 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                       Row(
                         children: [
                           if (subject.isNotEmpty) ...[
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 6.w,
-                                vertical: 2.h,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0033A0)
-                                    .withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(4.r),
-                              ),
-                              child: Text(
-                                subject,
-                                style: TextStyle(
-                                  fontSize: 9.sp,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF0033A0),
+                            Flexible(
+                              child: Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 6.w,
+                                  vertical: 2.h,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFF0033A0,
+                                  ).withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(4.r),
+                                ),
+                                child: Text(
+                                  subject,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 9.sp,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF0033A0),
+                                  ),
                                 ),
                               ),
                             ),
                             SizedBox(width: 6.w),
                           ],
                           if (batch.isNotEmpty)
-                            Text(
-                              batch,
-                              style: TextStyle(
-                                fontSize: 9.5.sp,
-                                fontWeight: FontWeight.w500,
-                                color: const Color(0xFF64748B),
+                            Flexible(
+                              flex: 2,
+                              child: Text(
+                                batch,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 9.5.sp,
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF64748B),
+                                ),
                               ),
                             ),
                         ],
@@ -586,10 +592,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                 ),
                 SizedBox(width: 8.w),
                 Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 8.w,
-                    vertical: 4.h,
-                  ),
+                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
                   decoration: BoxDecoration(
                     color: statusBg,
                     borderRadius: BorderRadius.circular(8.r),
@@ -600,11 +603,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      PhosphorIcon(
-                        statusIcon,
-                        color: statusColor,
-                        size: 12.sp,
-                      ),
+                      PhosphorIcon(statusIcon, color: statusColor, size: 12.sp),
                       SizedBox(width: 4.w),
                       Text(
                         statusLabel,
@@ -643,27 +642,38 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                     style: TextStyle(
                       fontSize: 10.sp,
                       fontWeight: FontWeight.w600,
-                      color: isDark
-                          ? Colors.white70
-                          : const Color(0xFF334155),
+                      color: isDark ? Colors.white70 : const Color(0xFF334155),
                     ),
                   ),
                   if (timeStr.isNotEmpty) ...[
-                    const Spacer(),
-                    PhosphorIcon(
-                      PhosphorIcons.clockBold,
-                      size: 13.sp,
-                      color: const Color(0xFF64748B),
-                    ),
-                    SizedBox(width: 4.w),
-                    Text(
-                      timeStr,
-                      style: TextStyle(
-                        fontSize: 10.sp,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? Colors.white70
-                            : const Color(0xFF334155),
+                    SizedBox(width: 8.w),
+                    // Right-aligned, and a long time string ellipsizes
+                    // instead of overflowing the row.
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          PhosphorIcon(
+                            PhosphorIcons.clockBold,
+                            size: 13.sp,
+                            color: const Color(0xFF64748B),
+                          ),
+                          SizedBox(width: 4.w),
+                          Flexible(
+                            child: Text(
+                              timeStr,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10.sp,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? Colors.white70
+                                    : const Color(0xFF334155),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -754,10 +764,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
           Text(
             'Classes you attend will be recorded automatically here.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 11.sp,
-              color: const Color(0xFF64748B),
-            ),
+            style: TextStyle(fontSize: 11.sp, color: const Color(0xFF64748B)),
           ),
         ],
       ),
@@ -782,7 +789,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
               style: TextStyle(
                 fontSize: 15.sp,
                 fontWeight: FontWeight.w800,
-                color: const Color(0xFF0F172A),
+                color: AppTheme.ink(context),
               ),
             ),
             SizedBox(height: 6.h),
@@ -804,10 +811,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                   borderRadius: BorderRadius.circular(10.r),
                 ),
               ),
-              icon: PhosphorIcon(
-                PhosphorIcons.arrowClockwiseBold,
-                size: 16.sp,
-              ),
+              icon: PhosphorIcon(PhosphorIcons.arrowClockwiseBold, size: 16.sp),
               label: const Text('Try Again'),
             ),
           ],

@@ -1,3 +1,217 @@
+/// Best guess of an exam's single subject from its title, or '' when it is
+/// unclear (mocks, mixed papers, chapters shared by two subjects).
+///
+/// Matches whole words only: the old substring check turned "Biomolecules"
+/// into Biology, "Animes" into Mathematics ("mat") and so on, so JEE tests
+/// showed a Biology chip. A JEE test is never labelled Biology.
+String guessExamSubject(String title) {
+  final t = ' ${title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ')} ';
+  bool has(String phrase) => t.contains(' $phrase ');
+  final isJee = has('jee') || has('jee main') || has('jee advanced');
+  final isNeet = has('neet');
+
+  String? found;
+  void pick(String subject) {
+    // Two different subjects named in one title: a mixed paper.
+    if (found != null && found != subject) {
+      found = '';
+    } else {
+      found ??= subject;
+    }
+  }
+
+  // 1. The subject named in the title.
+  const subjectWords = <String, List<String>>{
+    'Physics': ['physics', 'phy'],
+    'Chemistry': ['chemistry', 'chem'],
+    'Mathematics': ['mathematics', 'maths', 'math'],
+    'Biology': ['biology', 'bio', 'botany', 'zoology'],
+  };
+  subjectWords.forEach((subject, words) {
+    if (words.any(has)) pick(subject);
+  });
+
+  // 2. Otherwise a known chapter name ("Chapter Test: Vector Algebra").
+  if (found == null) {
+    for (final entry in _chapterSubjects.entries) {
+      if (entry.value.any(has)) pick(entry.key);
+    }
+    // Chapters taught in both Chemistry (Class 12) and Biology (Class 11).
+    if (found == null && (has('biomolecules') || has('biomolecule'))) {
+      if (isJee || !isNeet) found = 'Chemistry';
+    }
+  }
+
+  final result = found ?? '';
+  if (result == 'Biology' && isJee) return '';
+  return result;
+}
+
+// NCERT / JEE Main / NEET chapter names that belong to exactly one subject.
+// Chapters shared by two subjects (Thermodynamics, Biomolecules) are left out
+// on purpose.
+const Map<String, List<String>> _chapterSubjects = {
+  'Physics': [
+    'units and measurements',
+    'units and measurement',
+    'motion in a straight line',
+    'motion in a plane',
+    'laws of motion',
+    'work energy and power',
+    'rotational motion',
+    'system of particles',
+    'gravitation',
+    'mechanical properties of solids',
+    'mechanical properties of fluids',
+    'thermal properties of matter',
+    'kinetic theory',
+    'oscillations',
+    'waves',
+    'electric charges and fields',
+    'electrostatics',
+    'electrostatic potential and capacitance',
+    'current electricity',
+    'moving charges and magnetism',
+    'magnetism and matter',
+    'electromagnetic induction',
+    'alternating current',
+    'electromagnetic waves',
+    'ray optics',
+    'wave optics',
+    'optics',
+    'dual nature of radiation and matter',
+    'atoms',
+    'nuclei',
+    'semiconductor electronics',
+    'kinematics',
+    'modern physics',
+  ],
+  'Chemistry': [
+    'some basic concepts of chemistry',
+    'mole concept',
+    'structure of atom',
+    'atomic structure',
+    'classification of elements',
+    'periodicity in properties',
+    'chemical bonding',
+    'molecular structure',
+    'equilibrium',
+    'chemical equilibrium',
+    'ionic equilibrium',
+    'redox reactions',
+    'hydrogen',
+    's block',
+    'p block',
+    'd and f block',
+    'organic chemistry',
+    'general organic chemistry',
+    'goc',
+    'hydrocarbons',
+    'environmental chemistry',
+    'solid state',
+    'solutions',
+    'electrochemistry',
+    'chemical kinetics',
+    'surface chemistry',
+    'coordination compounds',
+    'haloalkanes',
+    'haloarenes',
+    'haloalkanes and haloarenes',
+    'alcohols phenols and ethers',
+    'alcohols',
+    'aldehydes',
+    'ketones',
+    'aldehydes and ketones',
+    'carboxylic acids',
+    'amines',
+    'polymers',
+    'chemistry in everyday life',
+    'states of matter',
+    'isolation of elements',
+    'metallurgy',
+  ],
+  'Mathematics': [
+    'sets',
+    'relations and functions',
+    'functions',
+    'trigonometric functions',
+    'trigonometry',
+    'inverse trigonometric functions',
+    'complex numbers',
+    'quadratic equations',
+    'linear inequalities',
+    'permutations and combinations',
+    'permutation and combination',
+    'binomial theorem',
+    'sequences and series',
+    'sequence and series',
+    'straight lines',
+    'straight line',
+    'conic sections',
+    'circles',
+    'parabola',
+    'ellipse',
+    'hyperbola',
+    'three dimensional geometry',
+    '3d geometry',
+    'limits and derivatives',
+    'limits',
+    'continuity and differentiability',
+    'differentiability',
+    'application of derivatives',
+    'applications of derivatives',
+    'integrals',
+    'definite integrals',
+    'indefinite integrals',
+    'application of integrals',
+    'area under curves',
+    'differential equations',
+    'vector algebra',
+    'vectors',
+    'matrices',
+    'determinants',
+    'probability',
+    'statistics',
+    'mathematical reasoning',
+    'linear programming',
+    'coordinate geometry',
+  ],
+  'Biology': [
+    'the living world',
+    'biological classification',
+    'plant kingdom',
+    'animal kingdom',
+    'morphology of flowering plants',
+    'anatomy of flowering plants',
+    'structural organisation in animals',
+    'cell the unit of life',
+    'cell cycle and cell division',
+    'photosynthesis in higher plants',
+    'respiration in plants',
+    'plant growth and development',
+    'breathing and exchange of gases',
+    'body fluids and circulation',
+    'excretory products',
+    'locomotion and movement',
+    'neural control and coordination',
+    'chemical coordination and integration',
+    'sexual reproduction in flowering plants',
+    'human reproduction',
+    'reproductive health',
+    'principles of inheritance and variation',
+    'molecular basis of inheritance',
+    'evolution',
+    'human health and disease',
+    'microbes in human welfare',
+    'biotechnology',
+    'organisms and populations',
+    'ecosystem',
+    'biodiversity and conservation',
+    'genetics',
+    'ecology',
+  ],
+};
+
 class ExamModel {
   const ExamModel({
     required this.id,
@@ -45,14 +259,20 @@ class ExamModel {
 
     DateTime? parsedStartTime;
     if (settings != null && settings['startTime'] != null) {
-      parsedStartTime = DateTime.tryParse(settings['startTime'].toString())?.toLocal();
+      parsedStartTime = DateTime.tryParse(
+        settings['startTime'].toString(),
+      )?.toLocal();
     } else if (json['startTime'] != null) {
-      parsedStartTime = DateTime.tryParse(json['startTime'].toString())?.toLocal();
+      parsedStartTime = DateTime.tryParse(
+        json['startTime'].toString(),
+      )?.toLocal();
     }
 
     DateTime? parsedEndTime;
     if (settings != null && settings['endTime'] != null) {
-      parsedEndTime = DateTime.tryParse(settings['endTime'].toString())?.toLocal();
+      parsedEndTime = DateTime.tryParse(
+        settings['endTime'].toString(),
+      )?.toLocal();
     } else if (json['endTime'] != null) {
       parsedEndTime = DateTime.tryParse(json['endTime'].toString())?.toLocal();
     }
@@ -90,34 +310,34 @@ class ExamModel {
         ? num.tryParse(json['score'].toString())
         : null;
 
-    String parsedSubjectName = 'Unknown';
-    if (sId is Map && sId['name'] != null) {
-      parsedSubjectName = sId['name'].toString();
-    } else {
-      final titleLower = (json['title'] ?? '').toString().toLowerCase();
-      if (titleLower.contains('physics') || titleLower.contains('phy')) {
-        parsedSubjectName = 'Physics';
-      } else if (titleLower.contains('chemistry') || titleLower.contains('chem')) {
-        parsedSubjectName = 'Chemistry';
-      } else if (titleLower.contains('biology') || titleLower.contains('bio') || titleLower.contains('zoology') || titleLower.contains('botany')) {
-        parsedSubjectName = 'Biology';
-      } else if (titleLower.contains('math') || titleLower.contains('mat')) {
-        parsedSubjectName = 'Mathematics';
-      }
-    }
+    // Empty when the exam has no single subject (e.g. a full mock); the UI
+    // shows "All subjects" and leaves it out of the subject filter.
+    // /exams/student/my-exams sends no subject, so it is guessed from the
+    // title (see [guessExamSubject]).
+    final String parsedSubjectName = sId is Map && sId['name'] != null
+        ? sId['name'].toString()
+        : guessExamSubject((json['title'] ?? '').toString());
 
     final String rawStatus = (json['status'] ?? 'Upcoming').toString();
-    final String parsedSubmissionStatus = json['submissionStatus']?.toString() ??
-        (rawStatus == 'COMPLETED' ? 'SUBMITTED' : (rawStatus == 'IN_PROGRESS' ? 'IN_PROGRESS' : 'NOT_STARTED'));
+    final String parsedSubmissionStatus =
+        json['submissionStatus']?.toString() ??
+        (rawStatus == 'COMPLETED'
+            ? 'SUBMITTED'
+            : (rawStatus == 'IN_PROGRESS' ? 'IN_PROGRESS' : 'NOT_STARTED'));
 
     return ExamModel(
       id: (json['_id'] ?? json['id'] ?? '').toString(),
       title: json['title'] ?? 'Untitled Exam',
-      subjectId: sId is Map ? (sId['_id'] ?? sId['id'] ?? '').toString() : sId?.toString() ?? '',
+      subjectId: sId is Map
+          ? (sId['_id'] ?? sId['id'] ?? '').toString()
+          : sId?.toString() ?? '',
       subjectName: parsedSubjectName,
       date: json['date'] != null
           ? DateTime.tryParse(json['date'].toString())?.toLocal()
-          : (parsedStartTime ?? (json['createdAt'] != null ? DateTime.tryParse(json['createdAt'].toString())?.toLocal() : null)),
+          : (parsedStartTime ??
+                (json['createdAt'] != null
+                    ? DateTime.tryParse(json['createdAt'].toString())?.toLocal()
+                    : null)),
       durationMinutes: durationMinutes,
       totalMarks: totalMarks,
       passingMarks: passingMarks,
@@ -169,13 +389,24 @@ class ExamResultModel {
       title = eId['title'].toString();
     }
 
-    final String examIdStr = eId is Map ? (eId['_id'] ?? eId['id'] ?? '').toString() : eId?.toString() ?? '';
+    final String examIdStr = eId is Map
+        ? (eId['_id'] ?? eId['id'] ?? '').toString()
+        : eId?.toString() ?? '';
 
     final num score = num.tryParse((json['score'] ?? 0).toString()) ?? 0;
-    final num totalMarks = num.tryParse((json['totalMarks'] ?? json['maxMarks'] ?? 100).toString()) ?? 100;
-    final num percentage = json['percentage'] != null
-        ? (num.tryParse(json['percentage'].toString()) ?? 0)
-        : (totalMarks > 0 ? ((score / totalMarks * 100 * 100).round() / 100) : 0);
+    final num totalMarks =
+        num.tryParse(
+          (json['totalMarks'] ?? json['maxMarks'] ?? 100).toString(),
+        ) ??
+        100;
+    final rawPercentage = json['accuracy'] ?? json['percentage'];
+    final num percentage =
+        ((rawPercentage != null
+                ? (num.tryParse(rawPercentage.toString()) ?? 0)
+                : (totalMarks > 0
+                      ? ((score / totalMarks * 100 * 100).round() / 100)
+                      : 0))
+            .clamp(0, 100));
 
     return ExamResultModel(
       id: (json['_id'] ?? json['id'] ?? '').toString(),
@@ -338,6 +569,10 @@ class ExamAnalysisDetailModel {
     required this.subjectName,
     required this.explanation,
     required this.negativeMarks,
+    this.questionType = 'MCQ',
+    this.questionImageUrl,
+    this.correctAnswerText = '',
+    this.attempted,
   });
 
   final String questionId;
@@ -350,6 +585,31 @@ class ExamAnalysisDetailModel {
   final String subjectName;
   final String explanation;
   final num negativeMarks;
+  final String questionType;
+
+  /// Separate question picture (Prepzo paper import); may also be in the HTML.
+  final String? questionImageUrl;
+
+  /// Expected answer of a typed (integer / numerical / fill-in) question.
+  final String correctAnswerText;
+
+  /// Server's verdict on whether the student answered; null on old servers.
+  final bool? attempted;
+
+  /// True for questions answered by typing rather than picking an option.
+  bool get isTypedAnswer {
+    final t = questionType.toUpperCase();
+    if (t == 'INTEGER' ||
+        t == 'NUMERICAL' ||
+        t == 'FILL_BLANKS' ||
+        t == 'SUBJECTIVE') {
+      return true;
+    }
+    final realOptions = options.where(
+      (o) => o.text.trim().isNotEmpty || (o.imageUrl ?? '').isNotEmpty,
+    );
+    return realOptions.isEmpty;
+  }
 
   factory ExamAnalysisDetailModel.fromJson(Map<String, dynamic> json) {
     final optionsJson = json['options'] as List? ?? [];
@@ -385,11 +645,32 @@ class ExamAnalysisDetailModel {
       marksObtained: calculatedMarksObtained,
       subjectName: json['subject'] is Map
           ? json['subject']['name']?.toString() ?? 'General'
-          : json['subject']?.toString() ?? json['subjectName']?.toString() ?? 'General',
+          : json['subject']?.toString() ??
+                json['subjectName']?.toString() ??
+                'General',
       explanation: json['explanation']?.toString() ?? '',
       negativeMarks: num.tryParse(json['negativeMarks']?.toString() ?? '') ?? 0,
+      questionType: json['type']?.toString() ?? 'MCQ',
+      questionImageUrl: _nonEmpty(
+        json['questionImageUrl'] ?? json['imageUrl'] ?? json['image'],
+      ),
+      correctAnswerText: json['correctAnswerText']?.toString() ?? '',
+      attempted: json['attempted'] is bool ? json['attempted'] as bool : null,
     );
   }
+}
+
+String? _nonEmpty(dynamic v) {
+  if (v is! String) return null;
+  final s = v.trim();
+  return s.isEmpty ? null : s;
+}
+
+String? _idString(dynamic v) {
+  if (v == null) return null;
+  if (v is Map) return (v['_id'] ?? v['id'] ?? v[r'$oid'])?.toString();
+  final s = v.toString();
+  return s.isEmpty ? null : s;
 }
 
 class ExamAnalysisOptionModel {
@@ -397,17 +678,20 @@ class ExamAnalysisOptionModel {
     required this.id,
     required this.text,
     required this.isCorrect,
+    this.imageUrl,
   });
 
   final String id;
   final String text;
   final bool isCorrect;
+  final String? imageUrl;
 
   factory ExamAnalysisOptionModel.fromJson(Map<String, dynamic> json) {
     return ExamAnalysisOptionModel(
-      id: json['_id'] ?? json['id'] ?? '',
-      text: json['text'] ?? '',
-      isCorrect: json['isCorrect'] ?? false,
+      id: _idString(json['_id'] ?? json['id']) ?? '',
+      text: json['text']?.toString() ?? '',
+      isCorrect: json['isCorrect'] == true,
+      imageUrl: _nonEmpty(json['imageUrl'] ?? json['image']),
     );
   }
 }
@@ -416,15 +700,25 @@ class ExamAnalysisUserAnswerModel {
   const ExamAnalysisUserAnswerModel({
     required this.selectedOptionId,
     required this.status,
+    this.selectedOptionIds = const [],
+    this.numericAnswer,
     this.subjectiveAnswerText,
   });
 
   final String? selectedOptionId;
   final String status;
-
-  /// Typed answer; integer-type questions store the student's number here
-  /// rather than in [selectedOptionId].
+  final List<String> selectedOptionIds;
+  final String? numericAnswer;
   final String? subjectiveAnswerText;
+
+  /// The typed answer, whichever field it was saved in.
+  String? get typedAnswer => numericAnswer ?? subjectiveAnswerText;
+
+  /// True when the student actually gave an answer (not just a review mark).
+  bool get hasValue =>
+      (selectedOptionId ?? '').isNotEmpty ||
+      selectedOptionIds.isNotEmpty ||
+      (typedAnswer ?? '').isNotEmpty;
 
   /// True only when the student actually gave an answer. `status` alone is
   /// unreliable: a question marked for review but left blank is not
@@ -434,10 +728,15 @@ class ExamAnalysisUserAnswerModel {
       (subjectiveAnswerText != null && subjectiveAnswerText!.trim().isNotEmpty);
 
   factory ExamAnalysisUserAnswerModel.fromJson(Map<String, dynamic> json) {
+    final ids = json['selectedOptionIds'];
     return ExamAnalysisUserAnswerModel(
-      selectedOptionId: json['selectedOptionId']?.toString(),
-      status: json['status'] ?? 'NOT_ANSWERED',
-      subjectiveAnswerText: json['subjectiveAnswerText']?.toString(),
+      selectedOptionId: _idString(json['selectedOptionId']),
+      status: json['status']?.toString() ?? 'NOT_ANSWERED',
+      selectedOptionIds: ids is List
+          ? ids.map(_idString).whereType<String>().toList()
+          : const [],
+      numericAnswer: _nonEmpty(json['numericAnswer']?.toString()),
+      subjectiveAnswerText: _nonEmpty(json['subjectiveAnswerText']?.toString()),
     );
   }
 }

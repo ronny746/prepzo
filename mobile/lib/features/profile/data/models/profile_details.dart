@@ -57,10 +57,10 @@ class ProfileDetails {
     final lastName = json['lastName']?.toString();
     String? fullName;
     if (firstName != null || lastName != null) {
-      fullName = [firstName, lastName]
-          .whereType<String>()
-          .where((s) => s.isNotEmpty)
-          .join(' ');
+      fullName = [
+        firstName,
+        lastName,
+      ].whereType<String>().where((s) => s.isNotEmpty).join(' ');
     }
 
     final addressJson = json['address'];
@@ -86,10 +86,19 @@ class ProfileDetails {
         ? json['metadata'] as Map<String, dynamic>
         : <String, dynamic>{};
 
-    if (cityStr.isEmpty) cityStr = metadata['city']?.toString() ?? json['city']?.toString() ?? '';
-    if (stateStr.isEmpty) stateStr = metadata['state']?.toString() ?? json['state']?.toString() ?? '';
+    if (cityStr.isEmpty)
+      cityStr = metadata['city']?.toString() ?? json['city']?.toString() ?? '';
+    if (stateStr.isEmpty)
+      stateStr =
+          metadata['state']?.toString() ?? json['state']?.toString() ?? '';
 
-    final avatarUrlStr = json['profilePictureUrl']?.toString() ??
+    final genderStr =
+        (json['gender'] != null && json['gender'].toString().isNotEmpty)
+        ? json['gender'].toString()
+        : (metadata['gender']?.toString() ?? '');
+
+    final avatarUrlStr =
+        json['profilePictureUrl']?.toString() ??
         json['profileImage']?.toString() ??
         json['avatarUrl']?.toString() ??
         json['avatar']?.toString() ??
@@ -98,30 +107,61 @@ class ProfileDetails {
         metadata['avatarUrl']?.toString() ??
         metadata['profileImage']?.toString();
 
-    final mobileStr = json['mobile']?.toString() ?? json['phone']?.toString() ?? '';
+    final mobileStr =
+        (json['mobile'] != null && json['mobile'].toString().isNotEmpty)
+        ? json['mobile'].toString()
+        : (json['phone']?.toString() ??
+              metadata['mobile']?.toString() ??
+              metadata['phone']?.toString() ??
+              '');
+
+    final emailStr =
+        (json['email'] != null && json['email'].toString().isNotEmpty)
+        ? json['email'].toString()
+        : (metadata['email']?.toString() ?? '');
 
     return ProfileDetails(
       id: json['_id']?.toString() ?? json['id']?.toString() ?? '',
-      name: fullName != null && fullName.isNotEmpty ? fullName : (json['name']?.toString() ?? 'User'),
-      email: json['email']?.toString() ?? '',
+      name: fullName != null && fullName.isNotEmpty
+          ? fullName
+          : (json['name']?.toString() ?? 'User'),
+      email: emailStr,
       mobile: mobileStr,
-      role: (roleCode ?? json['role']?.toString() ?? 'STUDENT').toString().toUpperCase(),
-      userCode: json['userCode']?.toString() ?? json['rollNumber']?.toString() ?? '',
-      gender: json['gender']?.toString() ?? '',
+      role: (roleCode ?? json['role']?.toString() ?? 'STUDENT')
+          .toString()
+          .toUpperCase(),
+      userCode:
+          json['userCode']?.toString() ?? json['rollNumber']?.toString() ?? '',
+      gender: genderStr,
       status: json['status']?.toString() ?? 'Active',
       instituteId: json['instituteId']?.toString() ?? '',
       branchId: json['branchId']?.toString() ?? '',
-      address: addressStr.isNotEmpty ? addressStr : (metadata['address']?.toString() ?? ''),
+      address: addressStr.isNotEmpty
+          ? addressStr
+          : (metadata['address']?.toString() ?? ''),
       city: cityStr,
       state: stateStr,
       firstName: firstName,
       lastName: lastName,
-      studentClass: metadata['studentClass']?.toString() ?? json['studentClass']?.toString() ?? metadata['class']?.toString() ?? json['class']?.toString() ?? '',
-      section: metadata['section']?.toString() ?? json['section']?.toString() ?? '',
-      rollNumber: json['rollNumber']?.toString() ?? metadata['rollNumber']?.toString() ?? '',
-      session: metadata['session']?.toString() ?? json['session']?.toString() ?? '',
-      targetExam: metadata['targetExam']?.toString() ?? json['targetExam']?.toString() ?? '',
-      instituteName: json['instituteName']?.toString() ?? 'SKD Academy',
+      studentClass:
+          metadata['studentClass']?.toString() ??
+          json['studentClass']?.toString() ??
+          metadata['class']?.toString() ??
+          json['class']?.toString() ??
+          '',
+      section:
+          metadata['section']?.toString() ?? json['section']?.toString() ?? '',
+      rollNumber:
+          json['rollNumber']?.toString() ??
+          metadata['rollNumber']?.toString() ??
+          '',
+      session:
+          metadata['session']?.toString() ?? json['session']?.toString() ?? '',
+      targetExam:
+          metadata['targetExam']?.toString() ??
+          json['targetExam']?.toString() ??
+          '',
+      instituteName: json['instituteName']?.toString() ?? 'Prepzo',
       avatarUrl: avatarUrlStr,
     );
   }

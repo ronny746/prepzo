@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lms/core/theme/app_theme.dart';
+import 'package:lms/core/data/india_locations.dart';
 import 'package:lms/features/authentication/data/repositories/auth_repository.dart';
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:lms/features/authentication/presentation/widgets/auth_layout.dart';
@@ -33,7 +34,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
 
     final first = user?.firstName == 'Student' ? '' : (user?.firstName ?? '');
     final last = user?.lastName == '.' ? '' : (user?.lastName ?? '');
-    final email = (user?.email.contains('@skd.com') ?? true) ? '' : (user?.email ?? '');
+    final email = (user?.email.contains('@skd.com') ?? true)
+        ? ''
+        : (user?.email ?? '');
 
     _firstNameController = TextEditingController(text: first);
     _lastNameController = TextEditingController(text: last);
@@ -74,7 +77,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       authBloc.add(const AuthStarted());
 
       if (mounted) {
-        final role = (authBloc.state.session?.user.role ?? 'STUDENT').toUpperCase().trim();
+        final role = (authBloc.state.session?.user.role ?? 'STUDENT')
+            .toUpperCase()
+            .trim();
         final route = switch (role) {
           'TEACHER' => AppRoutes.teacherDashboard,
           'PARENT' => AppRoutes.parentDashboard,
@@ -188,7 +193,10 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                             hint: 'First Name',
                             // icon: PhosphorIcons.user,
                             controller: _firstNameController,
-                            validator: (val) => val == null || val.trim().isEmpty ? 'Required' : null,
+                            validator: (val) =>
+                                val == null || val.trim().isEmpty
+                                ? 'Required'
+                                : null,
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -211,8 +219,10 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
                       validator: (val) {
-                        if (val == null || val.trim().isEmpty) return 'Email is required';
-                        if (!val.contains('@') || !val.contains('.')) return 'Enter valid email';
+                        if (val == null || val.trim().isEmpty)
+                          return 'Email is required';
+                        if (!val.contains('@') || !val.contains('.'))
+                          return 'Enter valid email';
                         return null;
                       },
                     ),
@@ -231,19 +241,27 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: _buildInputField(
+                          child: _buildLocationDropdown(
                             label: 'STATE',
-                            hint: 'State',
-                            // icon: PhosphorIcons.mapPin,
-                            controller: _stateController,
+                            hint: 'Select state',
+                            value: _stateController.text,
+                            items: indiaStates,
+                            onChanged: (value) => setState(() {
+                              _stateController.text = value ?? '';
+                              _cityController.clear();
+                            }),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: _buildInputField(
+                          child: _buildLocationDropdown(
                             label: 'CITY',
-                            hint: 'City',
-                            controller: _cityController,
+                            hint: 'Select city',
+                            value: _cityController.text,
+                            items: citiesForState(_stateController.text),
+                            onChanged: (value) => setState(() {
+                              _cityController.text = value ?? '';
+                            }),
                           ),
                         ),
                       ],
@@ -259,7 +277,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primary,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                           elevation: 3,
                           shadowColor: AppTheme.primary.withValues(alpha: 0.4),
                         ),
@@ -267,11 +287,17 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                             ? const SizedBox(
                                 height: 22,
                                 width: 22,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2.5,
+                                ),
                               )
                             : const Text(
                                 'Save & Continue',
-                                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 15,
+                                ),
                               ),
                       ),
                     ),
@@ -310,12 +336,25 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           controller: controller,
           keyboardType: keyboardType,
           validator: validator,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF111827)),
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF111827),
+          ),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.normal),
-            prefixIcon: icon != null ? PhosphorIcon(icon, size: 18, color: const Color(0xFF9CA3AF)) : null,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            hintStyle: const TextStyle(
+              fontSize: 13,
+              color: Colors.grey,
+              fontWeight: FontWeight.normal,
+            ),
+            prefixIcon: icon != null
+                ? PhosphorIcon(icon, size: 18, color: const Color(0xFF9CA3AF))
+                : null,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: 5,
+            ),
             filled: true,
             fillColor: const Color(0xFFF9FAFB),
             border: OutlineInputBorder(
@@ -329,6 +368,60 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
               borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocationDropdown({
+    required String label,
+    required String hint,
+    required String value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    final selected = items.contains(value) ? value : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF4B5563),
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          initialValue: selected,
+          isExpanded: true,
+          hint: Text(
+            hint,
+            style: const TextStyle(fontSize: 13, color: Colors.grey),
+          ),
+          items: items
+              .map(
+                (item) => DropdownMenuItem(
+                  value: item,
+                  child: Text(item, overflow: TextOverflow.ellipsis),
+                ),
+              )
+              .toList(),
+          onChanged: items.isEmpty ? null : onChanged,
+          decoration: InputDecoration(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 5,
+            ),
+            filled: true,
+            fillColor: const Color(0xFFF9FAFB),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
             ),
           ),
         ),

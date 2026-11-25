@@ -1,4 +1,8 @@
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -7,6 +11,9 @@ import 'package:chewie/chewie.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart' as url_launcher;
 import 'package:lms/core/theme/app_theme.dart';
+import 'package:lms/core/utils/protected_url.dart';
+import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
+import 'package:lms/l10n/app_localizations.dart';
 
 class ResourceViewerScreen extends StatefulWidget {
   final String url;
@@ -29,7 +36,7 @@ enum _ViewerMode { pdf, video, image, webView }
 class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
   late _ViewerMode _mode;
   late final PdfViewerController _pdfViewerController;
-  final GlobalKey<SfPdfViewerState> _pdfViewerKey = GlobalKey();
+  GlobalKey<SfPdfViewerState> _pdfViewerKey = GlobalKey();
 
   WebViewController? _webViewController;
   VideoPlayerController? _videoPlayerController;
@@ -43,11 +50,22 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
 
   late String _processedPdfUrl;
 
+  /// True when the URL is on our own backend and needs the Bearer token.
+  late final bool _isProtected;
+
+  /// Absolute form of [widget.url] (relative stream paths get the app host).
+  late final String _resolvedUrl;
+
+  /// Downloaded bytes of a protected PDF, rendered with SfPdfViewer.memory.
+  Uint8List? _pdfBytes;
+
   @override
   void initState() {
     super.initState();
     _pdfViewerController = PdfViewerController();
-    _processedPdfUrl = _getProcessedPdfUrl(widget.url);
+    _isProtected = isProtectedAppUrl(widget.url);
+    _resolvedUrl = resolveResourceUrl(widget.url);
+    _processedPdfUrl = _getProcessedPdfUrl(_resolvedUrl);
     _determineModeAndInit();
   }
 
@@ -68,7 +86,80 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
     return rawUrl;
   }
 
+  /// Current access token, or null when signed out.
+  String? _accessToken() => context.read<AuthBloc>().state.session?.accessToken;
+
+  /// Downloads a protected PDF with the Bearer token (60s timeout) and shows
+  /// it from memory. Any failure sets [_pdfLoadError] so the error state and
+  /// Retry are shown; there is no Google Docs fallback because Google cannot
+  /// fetch a protected URL.
+  Future<void> _loadProtectedPdf() async {
+    final token = _accessToken();
+    final failMessage = AppLocalizations.of(context)!.studyPdfLoadFailed;
+    setState(() {
+      _isLoading = true;
+      _pdfLoadError = null;
+      _pdfBytes = null;
+    });
+    try {
+      final res = await Dio().get<List<int>>(
+        _resolvedUrl,
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: {if (token != null) 'Authorization': 'Bearer $token'},
+          sendTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 60),
+          // Why: a redirect could carry the Bearer header to another host.
+          // The stream endpoint serves bytes directly, so any redirect fails.
+          followRedirects: false,
+        ),
+      );
+      final data = res.data;
+      if (data == null || data.isEmpty) throw Exception('empty response');
+      if (!mounted) return;
+      // Avoid copying a large PDF again when Dio already returned a Uint8List.
+      setState(
+        () => _pdfBytes = data is Uint8List ? data : Uint8List.fromList(data),
+      );
+    } catch (e) {
+      debugPrint('Protected PDF download failed: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _pdfLoadError = failMessage;
+        });
+      }
+    }
+  }
+
+  /// Re-runs the PDF load from the error state's Retry button.
+  void _retryPdf() {
+    // Why: a second tap while downloading would start a duplicate download.
+    if (_isProtected && _isLoading) return;
+    if (_isProtected) {
+      _loadProtectedPdf();
+    } else {
+      setState(() {
+        _isLoading = true;
+        _pdfLoadError = null;
+        // New key forces SfPdfViewer to re-fetch instead of reusing state.
+        _pdfViewerKey = GlobalKey();
+      });
+    }
+  }
+
   void _fallbackToGoogleDocsViewer() {
+    if (_isProtected) {
+      // Google's viewer can't fetch a protected URL; show the error instead.
+      if (mounted) {
+        setState(() {
+          _mode = _ViewerMode.pdf;
+          _isLoading = false;
+          _pdfLoadError = AppLocalizations.of(context)!.studyPdfLoadFailed;
+        });
+      }
+      return;
+    }
     final docsViewerUrl =
         'https://docs.google.com/gview?embedded=true&url=${Uri.encodeComponent(widget.url)}';
     if (mounted) {
@@ -107,6 +198,12 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
     } else {
       // Default documents & PDFs to native Syncfusion PDF Viewer
       _mode = _ViewerMode.pdf;
+      if (_isProtected) {
+        // Defer: needs context for the token/locale, which isn't ready in initState.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _loadProtectedPdf();
+        });
+      }
     }
   }
 
@@ -151,8 +248,12 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
     }
 
     try {
-      _videoPlayerController =
-          VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      // Protected videos need the Bearer token; never sent to other hosts.
+      final token = _isProtected ? _accessToken() : null;
+      _videoPlayerController = VideoPlayerController.networkUrl(
+        Uri.parse(_resolvedUrl),
+        httpHeaders: {if (token != null) 'Authorization': 'Bearer $token'},
+      );
       await _videoPlayerController!.initialize();
 
       _chewieController = ChewieController(
@@ -182,7 +283,7 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
   }
 
   Future<void> _openInExternalApp() async {
-    final uri = Uri.parse(widget.url);
+    final uri = Uri.parse(_resolvedUrl);
     try {
       final launched = await url_launcher.launchUrl(
         uri,
@@ -215,7 +316,9 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16.r),
+        ),
         title: Text(
           'Go to Page',
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16.sp),
@@ -267,7 +370,9 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Please enter a valid page (1 - $_pageCount)'),
+                    content: Text(
+                      'Please enter a valid page (1 - $_pageCount)',
+                    ),
                     backgroundColor: AppTheme.error,
                   ),
                 );
@@ -293,7 +398,9 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? AppTheme.darkBackground : const Color(0xFFF1F5F9),
+      backgroundColor: isDark
+          ? AppTheme.darkBackground
+          : const Color(0xFFF1F5F9),
       appBar: AppBar(
         backgroundColor: isDark ? AppTheme.darkSurface : Colors.white,
         elevation: 0.5,
@@ -341,20 +448,20 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
               tooltip: 'Go to Page',
               onPressed: _showJumpToPageDialog,
             ),
-          IconButton(
-            icon: PhosphorIcon(
-              PhosphorIcons.arrowSquareOutBold,
-              size: 20.sp,
-              color: AppTheme.primary,
+          // Protected URLs can't open externally (no token), so hide the action.
+          if (!_isProtected)
+            IconButton(
+              icon: PhosphorIcon(
+                PhosphorIcons.arrowSquareOutBold,
+                size: 20.sp,
+                color: AppTheme.primary,
+              ),
+              tooltip: 'Open in External App / Browser',
+              onPressed: _openInExternalApp,
             ),
-            tooltip: 'Open in External App / Browser',
-            onPressed: _openInExternalApp,
-          ),
         ],
       ),
-      body: SafeArea(
-        child: _buildBody(),
-      ),
+      body: SafeArea(child: _buildBody()),
     );
   }
 
@@ -377,11 +484,30 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
       return _buildPdfErrorState();
     }
 
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        SfPdfViewer.network(
-          _processedPdfUrl,
+    void onLoaded(PdfDocumentLoadedDetails details) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _pageCount = details.document.pages.count;
+        });
+      }
+    }
+
+    void onPageChanged(PdfPageChangedDetails details) {
+      if (mounted) setState(() => _pageNumber = details.newPageNumber);
+    }
+
+    void onFailed(PdfDocumentLoadFailedDetails details) {
+      debugPrint('SfPdfViewer load failed: ${details.description}');
+      if (mounted) _fallbackToGoogleDocsViewer();
+    }
+
+    // Protected PDFs render from downloaded bytes; others load by URL.
+    Widget? viewer;
+    if (_isProtected) {
+      if (_pdfBytes != null) {
+        viewer = SfPdfViewer.memory(
+          _pdfBytes!,
           key: _pdfViewerKey,
           controller: _pdfViewerController,
           canShowScrollHead: true,
@@ -389,28 +515,41 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
           canShowPaginationDialog: true,
           enableDoubleTapZooming: true,
           enableTextSelection: true,
-          onDocumentLoaded: (PdfDocumentLoadedDetails details) {
+          onDocumentLoaded: onLoaded,
+          onPageChanged: onPageChanged,
+          onDocumentLoadFailed: (d) {
+            debugPrint('SfPdfViewer load failed: ${d.description}');
             if (mounted) {
               setState(() {
                 _isLoading = false;
-                _pageCount = details.document.pages.count;
+                _pdfLoadError = AppLocalizations.of(
+                  context,
+                )!.studyPdfLoadFailed;
               });
             }
           },
-          onPageChanged: (PdfPageChangedDetails details) {
-            if (mounted) {
-              setState(() {
-                _pageNumber = details.newPageNumber;
-              });
-            }
-          },
-          onDocumentLoadFailed: (PdfDocumentLoadFailedDetails details) {
-            debugPrint('SfPdfViewer load failed: ${details.description}, fallback to WebViewer');
-            if (mounted) {
-              _fallbackToGoogleDocsViewer();
-            }
-          },
-        ),
+        );
+      }
+    } else {
+      viewer = SfPdfViewer.network(
+        _processedPdfUrl,
+        key: _pdfViewerKey,
+        controller: _pdfViewerController,
+        canShowScrollHead: true,
+        canShowScrollStatus: true,
+        canShowPaginationDialog: true,
+        enableDoubleTapZooming: true,
+        enableTextSelection: true,
+        onDocumentLoaded: onLoaded,
+        onPageChanged: onPageChanged,
+        onDocumentLoadFailed: onFailed,
+      );
+    }
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        if (viewer != null) viewer,
 
         // Loading indicator
         if (_isLoading)
@@ -502,12 +641,7 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 OutlinedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _isLoading = true;
-                      _pdfLoadError = null;
-                    });
-                  },
+                  onPressed: _retryPdf,
                   style: OutlinedButton.styleFrom(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8.r),
@@ -519,22 +653,24 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
                   ),
                   label: const Text('Retry'),
                 ),
-                SizedBox(width: 10.w),
-                ElevatedButton.icon(
-                  onPressed: _openInExternalApp,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8.r),
+                if (!_isProtected) ...[
+                  SizedBox(width: 10.w),
+                  ElevatedButton.icon(
+                    onPressed: _openInExternalApp,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8.r),
+                      ),
                     ),
+                    icon: PhosphorIcon(
+                      PhosphorIcons.arrowSquareOutBold,
+                      size: 15.sp,
+                    ),
+                    label: const Text('Open Externally'),
                   ),
-                  icon: PhosphorIcon(
-                    PhosphorIcons.arrowSquareOutBold,
-                    size: 15.sp,
-                  ),
-                  label: const Text('Open Externally'),
-                ),
+                ],
               ],
             ),
           ],
@@ -550,7 +686,7 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
       maxScale: 4.0,
       child: Center(
         child: Image.network(
-          widget.url,
+          _resolvedUrl,
           fit: BoxFit.contain,
           loadingBuilder: (context, child, loadingProgress) {
             if (loadingProgress == null) return child;
@@ -580,7 +716,9 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
   // --- VIDEO PLAYER ---
   Widget _buildVideoPlayer() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+      return const Center(
+        child: CircularProgressIndicator(color: AppTheme.primary),
+      );
     }
     if (_isVideoError) {
       return Center(
@@ -597,11 +735,13 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
               'Failed to load video.',
               style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 12.h),
-            ElevatedButton(
-              onPressed: _openInExternalApp,
-              child: const Text('Open in Browser'),
-            ),
+            if (!_isProtected) ...[
+              SizedBox(height: 12.h),
+              ElevatedButton(
+                onPressed: _openInExternalApp,
+                child: const Text('Open in Browser'),
+              ),
+            ],
           ],
         ),
       );
@@ -610,20 +750,26 @@ class _ResourceViewerScreenState extends State<ResourceViewerScreen> {
         _chewieController!.videoPlayerController.value.isInitialized) {
       return Center(child: Chewie(controller: _chewieController!));
     } else {
-      return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+      return const Center(
+        child: CircularProgressIndicator(color: AppTheme.primary),
+      );
     }
   }
 
   // --- WEBVIEW ---
   Widget _buildWebView() {
     if (_webViewController == null) {
-      return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+      return const Center(
+        child: CircularProgressIndicator(color: AppTheme.primary),
+      );
     }
     return Stack(
       children: [
         WebViewWidget(controller: _webViewController!),
         if (_isLoading)
-          const Center(child: CircularProgressIndicator(color: AppTheme.primary)),
+          const Center(
+            child: CircularProgressIndicator(color: AppTheme.primary),
+          ),
       ],
     );
   }

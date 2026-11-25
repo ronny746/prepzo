@@ -32,6 +32,63 @@ class MentorSessionItem {
   final String meetingLink;
 }
 
+/// Which tools a student can actually use, from the `access` flags of the
+/// courses behind their enrolled batches (/batches/my-batches). Mirrors the
+/// server's contentAccess middleware: a feature is on when any enrolled
+/// course grants it.
+class StudentFeatureAccess {
+  const StudentFeatureAccess({
+    required this.liveClasses,
+    required this.studyMaterials,
+    required this.attendance,
+  });
+
+  /// Batches could not be loaded: show every tool rather than hide by mistake.
+  const StudentFeatureAccess.unknown()
+    : liveClasses = true,
+      studyMaterials = true,
+      attendance = true;
+
+  final bool liveClasses;
+  final bool studyMaterials;
+
+  /// Attendance is only kept for classroom (offline / hybrid) batches of a
+  /// teaching course, not for online or test-series-only enrolments.
+  final bool attendance;
+
+  factory StudentFeatureAccess.fromBatches(List<dynamic> batches) {
+    var live = false;
+    var materials = false;
+    var attendance = false;
+    for (final b in batches) {
+      if (b is! Map) continue;
+      final course = b['courseId'];
+      final access = course is Map && course['access'] is Map
+          ? course['access'] as Map
+          : null;
+      // A batch without a course record (plain institute class) has no
+      // feature limits on the server side either way; treat it as classroom.
+      final courseLive = access == null
+          ? course is! Map
+          : access['liveClasses'] == true;
+      final courseMaterials = access == null
+          ? course is! Map
+          : access['studyMaterials'] == true;
+      live = live || courseLive;
+      materials = materials || courseMaterials;
+      final type = (b['type'] ?? 'offline').toString().toLowerCase();
+      if (type != 'online' && (courseLive || courseMaterials)) {
+        attendance = true;
+      }
+    }
+    return StudentFeatureAccess(
+      liveClasses: live,
+      studyMaterials: materials,
+      attendance: attendance,
+    );
+  }
+}
+
 class StudentDashboardData {
   const StudentDashboardData({
     required this.studentName,
@@ -49,6 +106,7 @@ class StudentDashboardData {
     required this.performance,
     this.performanceData = const {},
     this.mentorSessions = const [],
+    this.access = const StudentFeatureAccess.unknown(),
     required this.announcements,
     required this.activities,
     this.classesError,
@@ -75,6 +133,9 @@ class StudentDashboardData {
   final Map<String, String> performance;
   final Map<String, dynamic> performanceData;
   final List<MentorSessionItem> mentorSessions;
+
+  /// What the student's enrolled courses allow (drives Home tool tiles).
+  final StudentFeatureAccess access;
   final List<DashboardItem> announcements;
   final List<DashboardItem> activities;
 
@@ -151,6 +212,10 @@ class StudentAccess {
   final bool studyMaterials;
   final bool dpps;
   final bool testSeries;
+
+  /// Attendance is kept for classroom teaching; Prepzo's plan flags have no
+  /// separate attendance switch, so it follows live classes (as before).
+  bool get attendance => liveClasses;
 
   factory StudentAccess.fromJson(Map<String, dynamic> json) {
     // Only an explicit `false` hides a feature; a missing key stays visible.

@@ -6,6 +6,7 @@ import 'package:lms/core/widgets/resource_viewer_screen.dart';
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:lms/features/resources/data/models/resource.dart';
 import 'package:lms/features/resources/presentation/cubit/resources_cubit.dart';
+import 'package:lms/routes/app_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 class ResourcesScreen extends StatefulWidget {
@@ -24,13 +25,15 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
     _loadData();
   }
 
-  void _loadData() {
+  Future<void> _loadData() {
     final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
-    context.read<ResourcesCubit>().loadResources(token);
+    return context.read<ResourcesCubit>().loadResources(token);
   }
 
   void _handleNavigate(String folderName) {
-    final normalizedCurrent = _currentPath.endsWith('/') ? _currentPath : '$_currentPath/';
+    final normalizedCurrent = _currentPath.endsWith('/')
+        ? _currentPath
+        : '$_currentPath/';
     setState(() {
       _currentPath = '$normalizedCurrent$folderName/';
     });
@@ -47,13 +50,16 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pathParts = _currentPath.split('/').where((part) => part.isNotEmpty).toList();
+    final pathParts = _currentPath
+        .split('/')
+        .where((part) => part.isNotEmpty)
+        .toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
+      backgroundColor: AppTheme.page(context),
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () async => _loadData(),
+          onRefresh: _loadData,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             child: Padding(
@@ -104,20 +110,47 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                   }
 
                   if (state.error != null) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 80.0),
-                        child: Text(
-                          'Error loading study materials: ${state.error}',
-                          style: const TextStyle(color: AppTheme.error),
+                    // Never show raw error text (QA 7.2): a plan without
+                    // study material gets an explanation, anything else a
+                    // retry.
+                    final locked =
+                        state.locked ||
+                        state.error!.toLowerCase().contains('current plan');
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 16),
+                        _buildHeader(context),
+                        _buildStateMessage(
+                          icon: locked
+                              ? PhosphorIcons.lockSimple
+                              : PhosphorIcons.cloudSlash,
+                          title: locked
+                              ? 'Study material is not in your plan'
+                              : 'Could not load study materials',
+                          message: locked
+                              ? 'Your current course does not include notes '
+                                    'or videos. Your tests and practice are '
+                                    'in the Practice tab.'
+                              : 'Check your internet connection and try '
+                                    'again.',
+                          actionLabel: locked ? 'Explore courses' : 'Retry',
+                          onAction: locked
+                              ? () => Navigator.pushNamed(
+                                  context,
+                                  AppRoutes.courses,
+                                )
+                              : _loadData,
                         ),
-                      ),
+                      ],
                     );
                   }
 
                   // Filter resources according to selected batch section
                   final filteredResources = state.resources.where((res) {
-                    final isGlobal = (res.batchId == null || res.batchId!.isEmpty) && res.batchIds.isEmpty;
+                    final isGlobal =
+                        (res.batchId == null || res.batchId!.isEmpty) &&
+                        res.batchIds.isEmpty;
                     if (state.selectedSection == 'global') return isGlobal;
                     return isGlobal ||
                         res.batchId == state.selectedSection ||
@@ -129,15 +162,38 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                   final List<Resource> files = [];
 
                   for (final res in filteredResources) {
-                    final resPath = res.folderPath.isNotEmpty ? res.folderPath : '/';
-                    final normalizedResPath = resPath.startsWith('/') ? resPath : '/$resPath';
-                    final finalResPath = normalizedResPath.endsWith('/') ? normalizedResPath : '$normalizedResPath/';
-                    final normalizedCurrentPath = _currentPath.endsWith('/') ? _currentPath : '$_currentPath/';
+                    final resPath = res.folderPath.isNotEmpty
+                        ? res.folderPath
+                        : '/';
+                    final normalizedResPath = resPath.startsWith('/')
+                        ? resPath
+                        : '/$resPath';
+                    var finalResPath = normalizedResPath.endsWith('/')
+                        ? normalizedResPath
+                        : '$normalizedResPath/';
+                    final normalizedCurrentPath = _currentPath.endsWith('/')
+                        ? _currentPath
+                        : '$_currentPath/';
+
+                    // A FOLDER record is a folder named by its title, located at
+                    // its folderPath; it is never listed as a file. Treating it
+                    // as a deeper path makes empty folders appear and open.
+                    final isFolderRecord = res.type.toUpperCase() == 'FOLDER';
+                    if (isFolderRecord) {
+                      // Why: an empty or slash-containing title would build a
+                      // broken path, so skip it / flatten slashes.
+                      final folderName = res.title.trim().replaceAll('/', '-');
+                      if (folderName.isEmpty) continue;
+                      finalResPath = '$finalResPath$folderName/';
+                      if (finalResPath == normalizedCurrentPath) continue;
+                    }
 
                     if (finalResPath == normalizedCurrentPath) {
                       files.add(res);
                     } else if (finalResPath.startsWith(normalizedCurrentPath)) {
-                      final relativePath = finalResPath.substring(normalizedCurrentPath.length);
+                      final relativePath = finalResPath.substring(
+                        normalizedCurrentPath.length,
+                      );
                       final nextFolder = relativePath.split('/').first;
                       if (nextFolder.isNotEmpty) {
                         folders.add(nextFolder);
@@ -174,26 +230,45 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                                     color: Colors.grey.withValues(alpha: 0.1),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: const PhosphorIcon(PhosphorIcons.folderOpen, size: 48, color: Colors.grey),
+                                  child: const PhosphorIcon(
+                                    PhosphorIcons.folderOpen,
+                                    size: 48,
+                                    color: Colors.grey,
+                                  ),
                                 ),
                                 const SizedBox(height: 16),
-                                const Text('No materials in this section', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                const Text(
+                                  'No materials in this section',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
                                 const SizedBox(height: 4),
-                                const Text('Study notes and lectures will appear here.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                const Text(
+                                  'Study notes and lectures will appear here.',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 12,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
                         ),
 
                       if (sortedFolders.isNotEmpty) ...[
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 8,
+                          ),
                           child: Text(
                             'Subject Folders',
                             style: TextStyle(
                               fontWeight: FontWeight.w900,
                               fontSize: 16,
-                              color: Color(0xFF111827),
+                              color: AppTheme.ink(context),
                               letterSpacing: -0.4,
                             ),
                           ),
@@ -203,15 +278,18 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                         const SizedBox(height: 24),
                       ],
 
-                      if (sortedFolders.isEmpty && files.isNotEmpty) ...[
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      if (files.isNotEmpty) ...[
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 8,
+                          ),
                           child: Text(
                             'Chapter Materials & PDFs',
                             style: TextStyle(
                               fontWeight: FontWeight.w900,
                               fontSize: 16,
-                              color: Color(0xFF111827),
+                              color: AppTheme.ink(context),
                               letterSpacing: -0.4,
                             ),
                           ),
@@ -227,6 +305,50 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStateMessage({
+    required IconData icon,
+    required String title,
+    required String message,
+    required String actionLabel,
+    required VoidCallback onAction,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 60, bottom: 40),
+      child: Center(
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: PhosphorIcon(icon, size: 40, color: AppTheme.primary),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: AppTheme.ink(context),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: onAction, child: Text(actionLabel)),
+          ],
         ),
       ),
     );
@@ -297,8 +419,11 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
               // Enrolled Student Batches Cards
               ...state.myBatches.map((batch) {
                 final isSelected = state.selectedSection == batch.id;
-                final batchTitle = '${batch.name} ${batch.section != null && batch.section!.isNotEmpty ? '(${batch.section})' : ''}'.trim();
-                final subtitle = batch.courseName != null && batch.courseName!.isNotEmpty
+                final batchTitle =
+                    '${batch.name} ${batch.section != null && batch.section!.isNotEmpty ? '(${batch.section})' : ''}'
+                        .trim();
+                final subtitle =
+                    batch.courseName != null && batch.courseName!.isNotEmpty
                     ? batch.courseName!
                     : 'Enrolled Batch';
 
@@ -310,7 +435,9 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                     icon: PhosphorIcons.chalkboardTeacher,
                     isSelected: isSelected,
                     onTap: () {
-                      context.read<ResourcesCubit>().setSelectedSection(batch.id);
+                      context.read<ResourcesCubit>().setSelectedSection(
+                        batch.id,
+                      );
                       setState(() => _currentPath = '/');
                     },
                   ),
@@ -341,10 +468,10 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
           height: 125,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: isSelected ? AppTheme.primary : Colors.white,
+            color: isSelected ? AppTheme.primary : AppTheme.card(context),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: isSelected ? AppTheme.primary : const Color(0xFFE2E8F0),
+              color: isSelected ? AppTheme.primary : AppTheme.line(context),
               width: isSelected ? 1.5 : 1,
             ),
             boxShadow: isSelected
@@ -400,7 +527,7 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
-                      color: isSelected ? Colors.white : const Color(0xFF0F172A),
+                      color: isSelected ? Colors.white : AppTheme.ink(context),
                       height: 1.2,
                     ),
                     maxLines: 2,
@@ -412,7 +539,9 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                     style: TextStyle(
                       fontSize: 9.5,
                       fontWeight: FontWeight.w500,
-                      color: isSelected ? Colors.white70 : const Color(0xFF64748B),
+                      color: isSelected
+                          ? Colors.white70
+                          : const Color(0xFF64748B),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -430,9 +559,9 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: AppTheme.line(context)),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -445,7 +574,9 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                   PhosphorIcon(
                     PhosphorIcons.folderOpen,
                     size: 16,
-                    color: pathParts.isEmpty ? AppTheme.primary : const Color(0xFF6B7280),
+                    color: pathParts.isEmpty
+                        ? AppTheme.primary
+                        : const Color(0xFF6B7280),
                   ),
                   const SizedBox(width: 6),
                   Text(
@@ -453,7 +584,9 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 12,
-                      color: pathParts.isEmpty ? AppTheme.primary : const Color(0xFF6B7280),
+                      color: pathParts.isEmpty
+                          ? AppTheme.primary
+                          : const Color(0xFF6B7280),
                     ),
                   ),
                 ],
@@ -467,7 +600,11 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                 children: [
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: PhosphorIcon(PhosphorIcons.caretRight, size: 12, color: Colors.grey),
+                    child: PhosphorIcon(
+                      PhosphorIcons.caretRight,
+                      size: 12,
+                      color: Colors.grey,
+                    ),
                   ),
                   GestureDetector(
                     onTap: () => _handleBreadcrumbClick(index, pathParts),
@@ -476,7 +613,9 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 12,
-                        color: isLast ? AppTheme.primary : const Color(0xFF6B7280),
+                        color: isLast
+                            ? AppTheme.primary
+                            : const Color(0xFF6B7280),
                       ),
                     ),
                   ),
@@ -507,7 +646,10 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
     return vibrantColors[(hash + index) % vibrantColors.length];
   }
 
-  Widget _buildFoldersGrid(List<String> sortedFolders, List<Resource> allResources) {
+  Widget _buildFoldersGrid(
+    List<String> sortedFolders,
+    List<Resource> allResources,
+  ) {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -522,15 +664,21 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
         final folder = sortedFolders[index];
         final folderColor = _getRandomFolderColor(folder, index);
 
-        final normalizedCurrentPath = _currentPath.endsWith('/') ? _currentPath : '$_currentPath/';
+        final normalizedCurrentPath = _currentPath.endsWith('/')
+            ? _currentPath
+            : '$_currentPath/';
         final folderFullPath = '$normalizedCurrentPath$folder/';
         final notesCount = allResources.where((r) {
-          final resPath = r.folderPath.endsWith('/') ? r.folderPath : '${r.folderPath}/';
+          // Folder records are containers, not items.
+          if (r.type.toUpperCase() == 'FOLDER') return false;
+          final resPath = r.folderPath.endsWith('/')
+              ? r.folderPath
+              : '${r.folderPath}/';
           return resPath.startsWith(folderFullPath);
         }).length;
 
         return Material(
-          color: Colors.white,
+          color: AppTheme.card(context),
           borderRadius: BorderRadius.circular(22),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
@@ -540,7 +688,7 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: AppTheme.line(context)),
                 boxShadow: [
                   BoxShadow(
                     color: folderColor.withValues(alpha: 0.08),
@@ -569,7 +717,10 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: folderColor.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(12),
@@ -591,10 +742,10 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                       Expanded(
                         child: Text(
                           folder,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 14,
-                            color: Color(0xFF0F172A),
+                            color: AppTheme.ink(context),
                             letterSpacing: -0.3,
                           ),
                           maxLines: 1,
@@ -603,8 +754,8 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                       ),
                       Container(
                         padding: const EdgeInsets.all(6),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFF1F5F9),
+                        decoration: BoxDecoration(
+                          color: AppTheme.soft(context),
                           shape: BoxShape.circle,
                         ),
                         child: const PhosphorIcon(
@@ -632,21 +783,26 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
       itemBuilder: (context, index) {
         final resource = files[index];
         final isVideo = resource.type == 'VIDEO';
-        final isNote = resource.type == 'NOTES' || resource.type == 'PAST_PAPER';
+        final isNote =
+            resource.type == 'NOTES' || resource.type == 'PAST_PAPER';
 
-        final color = isVideo ? AppTheme.primary : (isNote ? AppTheme.error : AppTheme.secondary);
-        final icon = isVideo ? PhosphorIcons.playCircleFill : (isNote ? PhosphorIcons.filePdf : PhosphorIcons.link);
+        final color = isVideo
+            ? AppTheme.primary
+            : (isNote ? AppTheme.error : AppTheme.brandInk(context));
+        final icon = isVideo
+            ? PhosphorIcons.playCircleFill
+            : (isNote ? PhosphorIcons.filePdf : PhosphorIcons.link);
 
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           child: Material(
-            color: Colors.white,
+            color: AppTheme.card(context),
             borderRadius: BorderRadius.circular(20),
             clipBehavior: Clip.antiAlias,
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFF3F4F6)),
+                border: Border.all(color: AppTheme.soft(context)),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.03),
@@ -656,33 +812,47 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                 ],
               ),
               child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
                 leading: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: PhosphorIcon(
-                    icon,
-                    color: color,
-                    size: 22,
-                  ),
+                  child: PhosphorIcon(icon, color: color, size: 22),
                 ),
                 title: Text(
                   resource.title,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF111827), letterSpacing: -0.2),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                    color: AppTheme.ink(context),
+                    letterSpacing: -0.2,
+                  ),
                 ),
                 subtitle: Padding(
                   padding: const EdgeInsets.only(top: 4.0),
                   child: Text(
-                    resource.description?.isNotEmpty == true ? resource.description! : resource.type,
+                    resource.description?.isNotEmpty == true
+                        ? resource.description!
+                        : resource.type,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-                trailing: const PhosphorIcon(PhosphorIcons.caretRight, color: Colors.grey, size: 16),
+                trailing: const PhosphorIcon(
+                  PhosphorIcons.caretRight,
+                  color: Colors.grey,
+                  size: 16,
+                ),
                 onTap: () {
                   if (resource.fileUrl.isNotEmpty) {
                     Navigator.push(

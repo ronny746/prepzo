@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:lms/core/theme/app_theme.dart';
+import 'package:lms/l10n/app_localizations.dart';
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:lms/features/exams/data/models/exams_models.dart';
 import 'package:lms/features/exams/presentation/cubit/exams_cubit.dart';
@@ -88,18 +89,18 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppTheme.page(context),
       appBar: AppBar(
         title: Text(
           'Practice & Exams',
           style: TextStyle(
             fontSize: 18.sp,
             fontWeight: FontWeight.w800,
-            color: const Color(0xFF0F172A),
+            color: AppTheme.ink(context),
           ),
         ),
         elevation: 0,
-        backgroundColor: Colors.white,
+        backgroundColor: AppTheme.card(context),
         surfaceTintColor: Colors.transparent,
         centerTitle: false,
         bottom: TabBar(
@@ -108,10 +109,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
           indicatorWeight: 2.5,
           labelColor: AppTheme.primary,
           unselectedLabelColor: const Color(0xFF64748B),
-          labelStyle: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 13.sp,
-          ),
+          labelStyle: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.sp),
           unselectedLabelStyle: TextStyle(
             fontWeight: FontWeight.w600,
             fontSize: 13.sp,
@@ -143,10 +141,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
 
           return TabBarView(
             controller: _tabController,
-            children: [
-              _buildExamsTab(state),
-              _buildDppsTab(state),
-            ],
+            children: [_buildExamsTab(state), _buildDppsTab(state)],
           );
         },
       ),
@@ -157,11 +152,11 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
   // TAB 1: EXAMS VIEW
   // ==========================================
   Widget _buildExamsTab(ExamsState state) {
-    var exams = state.exams.where((e) {
-      final t = e.title.toLowerCase();
-      return !(t.startsWith('dpp -') ||
-          (t.contains('dpp') && (t.contains('qs') || t.contains('difficulty'))));
-    }).toList();
+    // Why: everything in state.exams comes from /exams/student/my-exams, so
+    // these are real exams even if the title starts with "DPP -". Real DPP
+    // sessions live in state.dppHistory (DPP tab). Hiding by title made
+    // legitimately assigned exams vanish.
+    var exams = List<ExamModel>.of(state.exams);
 
     // Chips come from the loaded tests so they never offer an empty subject.
     // Built before filtering so the chip row stays stable while searching.
@@ -191,6 +186,19 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
           .toList();
     }
 
+    if (_examSelectedSubject != 'All') {
+      exams = exams
+          .where((e) => e.subjectName == _examSelectedSubject)
+          .toList();
+    }
+
+    final subjects = <String>{
+      'All',
+      ...state.exams
+          .where((e) => e.subjectName.trim().isNotEmpty)
+          .map((e) => e.subjectName),
+    }.toList();
+
     // Completed vs Active toggle
     final completedExams = exams.where((e) {
       final sub = e.submissionStatus.toUpperCase();
@@ -202,13 +210,14 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
       return sub != 'SUBMITTED' && sub != 'AUTO_SUBMITTED';
     }).toList();
 
-    final displayedExams =
-        _showCompletedExams ? completedExams : activeUpcomingExams;
+    final displayedExams = _showCompletedExams
+        ? completedExams
+        : activeUpcomingExams;
 
     return RefreshIndicator(
       onRefresh: _handleRefresh,
       color: AppTheme.primary,
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.card(context),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
@@ -237,19 +246,54 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
               SizedBox(height: 12.h),
             ],
 
+            SizedBox(
+              height: 38.h,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: subjects.length,
+                separatorBuilder: (_, __) => SizedBox(width: 8.w),
+                itemBuilder: (context, index) {
+                  final subject = subjects[index];
+                  final selected = subject == _examSelectedSubject;
+                  return ChoiceChip(
+                    label: Text(subject),
+                    selected: selected,
+                    onSelected: (_) =>
+                        setState(() => _examSelectedSubject = subject),
+                    selectedColor: AppTheme.primary,
+                    backgroundColor: AppTheme.card(context),
+                    labelStyle: TextStyle(
+                      color: selected
+                          ? Colors.white
+                          : AppTheme.inkSoft(context),
+                      fontSize: 11.sp,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    side: BorderSide(
+                      color: selected
+                          ? AppTheme.primary
+                          : const Color(0xFFE2E8F0),
+                    ),
+                  );
+                },
+              ),
+            ),
+            SizedBox(height: 12.h),
+
             // Toggle: Active & Upcoming vs Completed
             Container(
               padding: EdgeInsets.all(4.w),
               decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
+                color: AppTheme.soft(context),
                 borderRadius: BorderRadius.circular(10.r),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: AppTheme.line(context)),
               ),
               child: Row(
                 children: [
                   Expanded(
                     child: _buildSubTabToggle(
-                      label: 'Active & Upcoming (${activeUpcomingExams.length})',
+                      label:
+                          'Active & Upcoming (${activeUpcomingExams.length})',
                       isSelected: !_showCompletedExams,
                       onTap: () => setState(() => _showCompletedExams = false),
                     ),
@@ -267,7 +311,17 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
             SizedBox(height: 14.h),
 
             // Exams List
-            if (displayedExams.isEmpty)
+            if (displayedExams.isEmpty && state.examsError != null)
+              // Show the server's reason (e.g. plan has no access) instead of
+              // a misleading "no exams scheduled".
+              _buildEmptyState(
+                icon: PhosphorIcons.fileText,
+                title: AppLocalizations.of(context)!.examLoadFailedTitle,
+                message: state.examsErrorIsGeneric
+                    ? AppLocalizations.of(context)!.examLoadFailedMessage
+                    : state.examsError!,
+              )
+            else if (displayedExams.isEmpty)
               _buildEmptyState(
                 icon: PhosphorIcons.fileText,
                 title: _showCompletedExams
@@ -303,21 +357,22 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
     final now = DateTime.now();
     bool isWindowOpen = true;
     if (exam.startTime != null && exam.endTime != null) {
-      isWindowOpen = !now.isBefore(exam.startTime!) && !now.isAfter(exam.endTime!);
+      isWindowOpen =
+          !now.isBefore(exam.startTime!) && !now.isAfter(exam.endTime!);
     }
 
     final dateStr = exam.date != null
         ? DateFormat('dd MMM yyyy, hh:mm a').format(exam.date!)
         : (exam.startTime != null
-            ? DateFormat('dd MMM yyyy, hh:mm a').format(exam.startTime!)
-            : 'Scheduled');
+              ? DateFormat('dd MMM yyyy, hh:mm a').format(exam.startTime!)
+              : 'Scheduled');
 
     return Container(
       padding: EdgeInsets.all(14.w),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card(context),
         borderRadius: BorderRadius.circular(14.r),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.line(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.02),
@@ -333,22 +388,30 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
-                decoration: BoxDecoration(
-                  color: AppTheme.primary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(6.r),
-                ),
-                child: Text(
-                  exam.subjectName.toUpperCase(),
-                  style: TextStyle(
-                    color: AppTheme.primary,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 9.sp,
-                    letterSpacing: 0.4,
+              Flexible(
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6.r),
+                  ),
+                  child: Text(
+                    (exam.subjectName.isNotEmpty
+                            ? exam.subjectName
+                            : 'All subjects')
+                        .toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppTheme.primary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 9.sp,
+                      letterSpacing: 0.4,
+                    ),
                   ),
                 ),
               ),
+              SizedBox(width: 8.w),
               if (isSubmitted)
                 Container(
                   padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
@@ -387,13 +450,13 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
                 Container(
                   padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 2.h),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: AppTheme.soft(context),
                     borderRadius: BorderRadius.circular(6.r),
                   ),
                   child: Text(
                     isWindowOpen ? 'Available' : 'Upcoming',
                     style: TextStyle(
-                      color: const Color(0xFF475569),
+                      color: AppTheme.inkSoft(context),
                       fontWeight: FontWeight.w700,
                       fontSize: 9.sp,
                     ),
@@ -409,7 +472,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
             style: TextStyle(
               fontSize: 14.sp,
               fontWeight: FontWeight.w800,
-              color: const Color(0xFF0F172A),
+              color: AppTheme.ink(context),
               letterSpacing: -0.2,
             ),
           ),
@@ -543,28 +606,32 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
 
     // Separate Teacher Assigned DPPs vs General DPPs
     final teacherDpps = allDpps.where((item) {
-      final Map<String, dynamic> map =
-          item is Map ? Map<String, dynamic>.from(item) : {};
+      final Map<String, dynamic> map = item is Map
+          ? Map<String, dynamic>.from(item)
+          : {};
       return _isTeacherDpp(map);
     }).toList();
 
     final pendingTeacherDpps = teacherDpps.where((item) {
-      final Map<String, dynamic> map =
-          item is Map ? Map<String, dynamic>.from(item) : {};
+      final Map<String, dynamic> map = item is Map
+          ? Map<String, dynamic>.from(item)
+          : {};
       final status = (map['status'] ?? '').toString().toUpperCase();
       return status != 'COMPLETED';
     }).toList();
 
     final completedTeacherDpps = teacherDpps.where((item) {
-      final Map<String, dynamic> map =
-          item is Map ? Map<String, dynamic>.from(item) : {};
+      final Map<String, dynamic> map = item is Map
+          ? Map<String, dynamic>.from(item)
+          : {};
       final status = (map['status'] ?? '').toString().toUpperCase();
       return status == 'COMPLETED';
     }).toList();
 
     final completedAllDpps = allDpps.where((item) {
-      final Map<String, dynamic> map =
-          item is Map ? Map<String, dynamic>.from(item) : {};
+      final Map<String, dynamic> map = item is Map
+          ? Map<String, dynamic>.from(item)
+          : {};
       final status = (map['status'] ?? '').toString().toUpperCase();
       return status == 'COMPLETED';
     }).toList();
@@ -586,9 +653,11 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
               num.tryParse(item['attemptedCount'].toString()) ?? 0;
         }
         final sc = num.tryParse(item['score']?.toString() ?? '0') ?? 0;
-        final tMarks = num.tryParse(item['totalMarks']?.toString() ?? '0') ??
+        final tMarks =
+            num.tryParse(item['totalMarks']?.toString() ?? '0') ??
             ((item['totalQuestions'] ?? 0) * 4);
-        final qCount = int.tryParse(item['totalQuestions']?.toString() ?? '0') ?? 0;
+        final qCount =
+            int.tryParse(item['totalQuestions']?.toString() ?? '0') ?? 0;
         totalScore += sc;
         totalPossible += tMarks;
         totalQuestionsSolved += qCount;
@@ -605,7 +674,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
     return RefreshIndicator(
       onRefresh: _handleRefresh,
       color: AppTheme.primary,
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.card(context),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
@@ -628,9 +697,9 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
             Container(
               padding: EdgeInsets.all(4.w),
               decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
+                color: AppTheme.soft(context),
                 borderRadius: BorderRadius.circular(10.r),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: AppTheme.line(context)),
               ),
               child: Row(
                 children: [
@@ -662,10 +731,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
                 completedList: completedTeacherDpps,
               )
             else
-              _buildDppHistoryView(
-                allDpps: allDpps,
-                subjects: state.subjects,
-              ),
+              _buildDppHistoryView(allDpps: allDpps, subjects: state.subjects),
           ],
         ),
       ),
@@ -727,9 +793,9 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 10.h),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card(context),
         borderRadius: BorderRadius.circular(12.r),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.line(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.02),
@@ -751,8 +817,10 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
               ),
               if (badge != null)
                 Container(
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.5.h),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 4.w,
+                    vertical: 1.5.h,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFEF4444),
                     borderRadius: BorderRadius.circular(4.r),
@@ -784,7 +852,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
             style: TextStyle(
               fontSize: 15.sp,
               fontWeight: FontWeight.w800,
-              color: const Color(0xFF0F172A),
+              color: AppTheme.ink(context),
               letterSpacing: -0.3,
             ),
           ),
@@ -828,7 +896,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
                 style: TextStyle(
                   fontSize: 13.sp,
                   fontWeight: FontWeight.w800,
-                  color: const Color(0xFF0F172A),
+                  color: AppTheme.ink(context),
                 ),
               ),
             ],
@@ -856,7 +924,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
             style: TextStyle(
               fontSize: 13.sp,
               fontWeight: FontWeight.w800,
-              color: const Color(0xFF0F172A),
+              color: AppTheme.ink(context),
             ),
           ),
           SizedBox(height: 8.h),
@@ -883,17 +951,22 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
   }) {
     final title = dppMap['title']?.toString() ?? 'Teacher Assigned DPP';
     final filters = dppMap['filters'] is Map ? dppMap['filters'] as Map : {};
-    final subject = (filters['subject'] ?? dppMap['subject'] ?? 'General').toString();
-    final topicsList = filters['topics'] is List && (filters['topics'] as List).isNotEmpty
+    final subject = (filters['subject'] ?? dppMap['subject'] ?? 'General')
+        .toString();
+    final topicsList =
+        filters['topics'] is List && (filters['topics'] as List).isNotEmpty
         ? (filters['topics'] as List).map((e) => e.toString()).toList()
-        : (filters['topic'] != null ? [filters['topic'].toString()] : <String>[]);
+        : (filters['topic'] != null
+              ? [filters['topic'].toString()]
+              : <String>[]);
 
     final teacherObj = dppMap['assignedBy'];
     final String teacherName = teacherObj is Map
-        ? '${teacherObj['firstName'] ?? ''} ${teacherObj['lastName'] ?? ''}'.trim()
+        ? '${teacherObj['firstName'] ?? ''} ${teacherObj['lastName'] ?? ''}'
+              .trim()
         : (teacherObj != null && teacherObj.toString().isNotEmpty
-            ? teacherObj.toString()
-            : 'Faculty Teacher');
+              ? teacherObj.toString()
+              : 'Faculty Teacher');
 
     final int totalQuestions = dppMap['totalQuestions'] is num
         ? (dppMap['totalQuestions'] as num).toInt()
@@ -912,10 +985,10 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
     return Container(
       padding: EdgeInsets.all(14.w),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card(context),
         borderRadius: BorderRadius.circular(14.r),
         border: Border.all(
-          color: isPending ? const Color(0xFFA7F3D0) : const Color(0xFFE2E8F0),
+          color: isPending ? const Color(0xFFA7F3D0) : AppTheme.line(context),
           width: isPending ? 1.2 : 1.0,
         ),
         boxShadow: [
@@ -1003,7 +1076,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
             style: TextStyle(
               fontSize: 13.5.sp,
               fontWeight: FontWeight.w800,
-              color: const Color(0xFF0F172A),
+              color: AppTheme.ink(context),
               letterSpacing: -0.2,
             ),
           ),
@@ -1028,7 +1101,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: AppTheme.soft(context),
                   borderRadius: BorderRadius.circular(4.r),
                 ),
                 child: Text(
@@ -1036,14 +1109,13 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
                   style: TextStyle(
                     fontSize: 9.sp,
                     fontWeight: FontWeight.w700,
-                    color: const Color(0xFF334155),
+                    color: AppTheme.inkSoft(context),
                   ),
                 ),
               ),
               ...topicsList.map(
                 (topic) => Container(
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                  padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
                   decoration: BoxDecoration(
                     color: const Color(0xFFECFDF5),
                     borderRadius: BorderRadius.circular(4.r),
@@ -1158,7 +1230,9 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
         if (item is! Map) return false;
         final title = (item['title'] ?? '').toString().toLowerCase();
         final filters = item['filters'] is Map ? item['filters'] as Map : {};
-        final sub = (filters['subject'] ?? item['subject'] ?? '').toString().toLowerCase();
+        final sub = (filters['subject'] ?? item['subject'] ?? '')
+            .toString()
+            .toLowerCase();
         return title.contains(q) || sub.contains(q);
       }).toList();
     }
@@ -1190,7 +1264,8 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
           _buildEmptyState(
             icon: PhosphorIcons.clockCounterClockwise,
             title: 'No DPP History Found',
-            message: 'Completed DPP practice sessions will be logged here for evaluation.',
+            message:
+                'Completed DPP practice sessions will be logged here for evaluation.',
           )
         else
           ListView.separated(
@@ -1205,10 +1280,12 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
 
               final title =
                   dppMap['title']?.toString() ?? 'DPP Practice Session';
-              final filters =
-                  dppMap['filters'] is Map ? dppMap['filters'] as Map : {};
+              final filters = dppMap['filters'] is Map
+                  ? dppMap['filters'] as Map
+                  : {};
               final subject =
-                  (filters['subject'] ?? dppMap['subject'] ?? 'General').toString();
+                  (filters['subject'] ?? dppMap['subject'] ?? 'General')
+                      .toString();
               final score = dppMap['score']?.toString() ?? '0';
               final totalMarks =
                   dppMap['totalMarks']?.toString() ?? '40';
@@ -1225,20 +1302,20 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
               final Color accColor = numPct >= 70
                   ? const Color(0xFF059669)
                   : (numPct >= 40
-                      ? const Color(0xFFD97706)
-                      : const Color(0xFFDC2626));
+                        ? const Color(0xFFD97706)
+                        : const Color(0xFFDC2626));
               final Color accBg = numPct >= 70
                   ? const Color(0xFFECFDF5)
                   : (numPct >= 40
-                      ? const Color(0xFFFFFBEB)
-                      : const Color(0xFFFEF2F2));
+                        ? const Color(0xFFFFFBEB)
+                        : const Color(0xFFFEF2F2));
 
               return Container(
                 padding: EdgeInsets.all(12.w),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppTheme.card(context),
                   borderRadius: BorderRadius.circular(12.r),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: AppTheme.line(context)),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.02),
@@ -1258,7 +1335,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 12.5.sp,
-                              color: const Color(0xFF0F172A),
+                              color: AppTheme.ink(context),
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1266,12 +1343,16 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
                           SizedBox(height: 2.h),
                           Row(
                             children: [
-                              Text(
-                                subject,
-                                style: TextStyle(
-                                  color: const Color(0xFF64748B),
-                                  fontSize: 9.5.sp,
-                                  fontWeight: FontWeight.w600,
+                              Flexible(
+                                child: Text(
+                                  subject,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: const Color(0xFF64748B),
+                                    fontSize: 9.5.sp,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                               if (dateStr.isNotEmpty) ...[
@@ -1327,7 +1408,8 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
                     ElevatedButton(
                       onPressed: () {
                         final mockExam = ExamModel(
-                          id: (dppMap['_id'] ?? dppMap['sessionId'] ?? '').toString(),
+                          id: (dppMap['_id'] ?? dppMap['sessionId'] ?? '')
+                              .toString(),
                           title: title,
                           subjectId: '',
                           subjectName: subject,
@@ -1391,7 +1473,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
       onChanged: onChanged,
       style: TextStyle(
         fontSize: 12.5.sp,
-        color: const Color(0xFF0F172A),
+        color: AppTheme.ink(context),
         fontWeight: FontWeight.w600,
       ),
       decoration: InputDecoration(
@@ -1416,15 +1498,15 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
               )
             : null,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: AppTheme.card(context),
         contentPadding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 12.w),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10.r),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          borderSide: BorderSide(color: AppTheme.line(context)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10.r),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          borderSide: BorderSide(color: AppTheme.line(context)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10.r),
@@ -1456,10 +1538,12 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
               duration: const Duration(milliseconds: 150),
               padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
               decoration: BoxDecoration(
-                color: isSelected ? AppTheme.primary : Colors.white,
+                color: isSelected ? AppTheme.primary : AppTheme.card(context),
                 borderRadius: BorderRadius.circular(16.r),
                 border: Border.all(
-                  color: isSelected ? AppTheme.primary : const Color(0xFFCBD5E1),
+                  color: isSelected
+                      ? AppTheme.primary
+                      : const Color(0xFFCBD5E1),
                 ),
               ),
               child: Center(
@@ -1468,7 +1552,9 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
                   style: TextStyle(
                     fontSize: 11.sp,
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected ? Colors.white : const Color(0xFF475569),
+                    color: isSelected
+                        ? Colors.white
+                        : AppTheme.inkSoft(context),
                   ),
                 ),
               ),
@@ -1491,7 +1577,11 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
         duration: const Duration(milliseconds: 150),
         padding: EdgeInsets.symmetric(vertical: 7.h),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
+          color: isSelected
+              ? (AppTheme.isDarkOf(context)
+                    ? Colors.white.withValues(alpha: 0.12)
+                    : Colors.white)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(8.r),
           boxShadow: isSelected
               ? [
@@ -1528,9 +1618,9 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
       width: double.infinity,
       padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 24.h),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card(context),
         borderRadius: BorderRadius.circular(14.r),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.line(context)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1552,7 +1642,7 @@ class _StudentExamsScreenState extends State<StudentExamsScreen>
             style: TextStyle(
               fontSize: 13.sp,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFF0F172A),
+              color: AppTheme.ink(context),
             ),
             textAlign: TextAlign.center,
           ),

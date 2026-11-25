@@ -2,18 +2,42 @@ class DoubtBatchModel {
   final String id;
   final String name;
   final String section;
+  final List<TeacherModel> teachers;
 
   DoubtBatchModel({
     required this.id,
     required this.name,
     required this.section,
+    this.teachers = const [],
   });
 
   factory DoubtBatchModel.fromJson(Map<String, dynamic> json) {
+    final List<TeacherModel> batchTeachers = [];
+
+    // Check batchTeacherId
+    if (json['batchTeacherId'] is Map<String, dynamic>) {
+      batchTeachers.add(
+        TeacherModel.fromJson(json['batchTeacherId'] as Map<String, dynamic>),
+      );
+    }
+
+    // Check teachers array
+    if (json['teachers'] is List) {
+      for (final t in json['teachers']) {
+        if (t is Map<String, dynamic>) {
+          final tm = TeacherModel.fromJson(t);
+          if (!batchTeachers.any((existing) => existing.id == tm.id)) {
+            batchTeachers.add(tm);
+          }
+        }
+      }
+    }
+
     return DoubtBatchModel(
       id: json['_id']?.toString() ?? json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? 'Batch',
       section: json['section']?.toString() ?? '',
+      teachers: batchTeachers,
     );
   }
 }
@@ -35,7 +59,9 @@ class TeacherModel {
     final fn = json['firstName']?.toString() ?? '';
     final ln = json['lastName']?.toString() ?? '';
     final fnLn = [fn, ln].where((s) => s.isNotEmpty).join(' ');
-    final full = fnLn.isNotEmpty ? fnLn : (json['name']?.toString() ?? 'Teacher');
+    final full = fnLn.isNotEmpty
+        ? fnLn
+        : (json['name']?.toString() ?? 'Teacher');
 
     return TeacherModel(
       id: json['_id']?.toString() ?? json['id']?.toString() ?? '',
@@ -84,7 +110,9 @@ class DoubtModel {
       final fn = sMap['firstName']?.toString() ?? '';
       final ln = sMap['lastName']?.toString() ?? '';
       final combined = [fn, ln].where((s) => s.isNotEmpty).join(' ');
-      sName = combined.isNotEmpty ? combined : (sMap['name']?.toString() ?? 'Student');
+      sName = combined.isNotEmpty
+          ? combined
+          : (sMap['name']?.toString() ?? 'Student');
     } else if (json['studentId'] != null) {
       sId = json['studentId'].toString();
     }
@@ -97,14 +125,19 @@ class DoubtModel {
       final fn = tMap['firstName']?.toString() ?? '';
       final ln = tMap['lastName']?.toString() ?? '';
       final combined = [fn, ln].where((s) => s.isNotEmpty).join(' ');
-      tName = combined.isNotEmpty ? combined : (tMap['name']?.toString() ?? 'Teacher');
+      tName = combined.isNotEmpty
+          ? combined
+          : (tMap['name']?.toString() ?? 'Teacher');
     } else if (json['teacherId'] != null) {
       tId = json['teacherId'].toString();
     }
 
     String bId = '';
     if (json['batchId'] is Map<String, dynamic>) {
-      bId = json['batchId']['_id']?.toString() ?? json['batchId']['id']?.toString() ?? '';
+      bId =
+          json['batchId']['_id']?.toString() ??
+          json['batchId']['id']?.toString() ??
+          '';
     } else if (json['batchId'] != null) {
       bId = json['batchId'].toString();
     }
@@ -125,7 +158,8 @@ class DoubtModel {
 
     DateTime createdDate = DateTime.now();
     if (json['createdAt'] != null) {
-      createdDate = DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now();
+      createdDate =
+          DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now();
     }
 
     return DoubtModel(

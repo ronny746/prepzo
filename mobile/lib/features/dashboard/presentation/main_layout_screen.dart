@@ -1,9 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:lms/core/services/deep_link_service.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
-import 'package:lms/core/services/deep_link_service.dart';
+import 'package:lms/core/services/student_data_refresh.dart';
 import 'package:lms/core/theme/app_theme.dart';
 import 'package:lms/features/authentication/presentation/bloc/auth_bloc.dart';
 import 'package:lms/features/dashboard/presentation/student_dashboard_screen.dart';
@@ -44,19 +45,39 @@ class MainLayoutScreen extends StatefulWidget {
   MainLayoutScreenState createState() => MainLayoutScreenState();
 }
 
-class MainLayoutScreenState extends State<MainLayoutScreen> {
+class MainLayoutScreenState extends State<MainLayoutScreen>
+    with RouteAware, WidgetsBindingObserver {
   // Keep the menu implementation available, but do not expose it in the app yet.
   static const bool _showSideMenu = false;
   int _selectedIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   // Cubits are created inside build() (below this State's context), so keep
   // handles to refresh Home when its tab is tapped.
-  StudentDashboardCubit? _dashboardCubit;
-  ExamsCubit? _examsCubit;
+
+  // Tabs are built the first time they are opened (not all 12 at start-up,
+  // which fired every screen's API calls at once) and then kept alive.
+  final Set<int> _builtTabs = {0};
+
+  // Owned here (not created inline in build) so the layout can refresh them
+  // when the student returns from a test or re-opens Home (QA 2.3).
+  late final StudentDashboardCubit _dashboardCubit;
+  late final ExamsCubit _examsCubit;
+  DateTime _lastRefresh = DateTime.now();
+  PageRoute<dynamic>? _subscribedRoute;
+
+  String get _token =>
+      context.read<AuthBloc>().state.session?.accessToken ?? '';
 
   @override
   void initState() {
     super.initState();
+    _dashboardCubit = StudentDashboardCubit(
+      dashboardRepository: context.read<DashboardRepository>(),
+    )..loadDashboard(_token);
+    _examsCubit = ExamsCubit(examsRepository: context.read<ExamsRepository>())
+      ..loadStudentExams(_token);
+    context.read<LiveClassesCubit>().fetchLiveClasses(_token);
+    WidgetsBinding.instance.addObserver(this);
     // Signed in and on the student home: open any course link that is waiting.
     DeepLinkService.markReady();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -66,11 +87,58 @@ class MainLayoutScreenState extends State<MainLayoutScreen> {
     });
   }
 
-  void setSelectedIndex(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && route != _subscribedRoute) {
+      if (_subscribedRoute != null) appRouteObserver.unsubscribe(this);
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
   }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    appRouteObserver.unsubscribe(this);
+    _dashboardCubit.close();
+    _examsCubit.close();
+    super.dispose();
+  }
+
+  // Back in the app (e.g. a test auto-submitted while it was in the
+  // background): refresh, throttled.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Only when the tabs are on screen: not under a running test (the
+    // camera permission dialog also "resumes" the app).
+    if (state == AppLifecycleState.resumed &&
+        (ModalRoute.of(context)?.isCurrent ?? false)) {
+      _refreshStudentData(force: false);
+    }
+  }
+
+  // A screen pushed on top (exam player, analysis, course page, ...) closed.
+  @override
+  void didPopNext() => _refreshStudentData();
+
+  /// Reloads Home counts, the exam list and Progress without spinners.
+  void _refreshStudentData({bool force = true}) {
+    final now = DateTime.now();
+    final minGap = force
+        ? const Duration(seconds: 2)
+        : const Duration(seconds: 20);
+    if (now.difference(_lastRefresh) < minGap) return;
+    _lastRefresh = now;
+    final token = _token;
+    if (token.isEmpty) return;
+    _dashboardCubit.loadDashboard(token, silent: true);
+    _examsCubit.loadStudentExams(token);
+    studentDataRefreshTick.value++;
+  }
+
+  void setSelectedIndex(int index) => _onItemTapped(index);
 
   final List<Widget> _screens = [
     const StudentDashboardScreen(),
@@ -145,24 +213,22 @@ class MainLayoutScreenState extends State<MainLayoutScreen> {
   /// Study is hidden for students whose plan has no study material
   /// (`GET /users/me/access`). Unknown access counts as allowed.
   bool _isTabVisible(int index, [StudentAccess? access]) {
-    final a = access ?? _dashboardCubit?.state.access;
-    if (index == _studyTabIndex && a != null && !a.studyMaterials) return false;
+    final a = access ?? _dashboardCubit.state.access;
+    if (index == _studyTabIndex && !a.studyMaterials) return false;
     return true;
   }
 
   void _onItemTapped(int index) {
     // Voice commands can still ask for a hidden tab; stay where we are.
     if (!_isTabVisible(index)) return;
+    // Opening Home / Practice / Progress shows fresh numbers (throttled).
+    if (index == 0 || index == 1 || index == 3) {
+      _refreshStudentData(force: false);
+    }
     setState(() {
       _selectedIndex = index;
+      _builtTabs.add(index);
     });
-    // The IndexedStack keeps Home alive, so without this it shows stale data
-    // when re-selected (same reload as StudentDashboardScreen.didPopNext).
-    if (index == 0) {
-      final token = context.read<AuthBloc>().state.session?.accessToken ?? '';
-      _dashboardCubit?.loadDashboard(token);
-      _examsCubit?.loadStudentExams(token);
-    }
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
       Navigator.pop(context);
     }
@@ -188,9 +254,7 @@ class MainLayoutScreenState extends State<MainLayoutScreen> {
         if (didPop) return;
 
         if (_selectedIndex != 0) {
-          setState(() {
-            _selectedIndex = 0;
-          });
+          _onItemTapped(0);
           return;
         }
 
@@ -201,11 +265,7 @@ class MainLayoutScreenState extends State<MainLayoutScreen> {
       },
       child: MultiBlocProvider(
         providers: [
-          BlocProvider(
-            create: (_) => _dashboardCubit = StudentDashboardCubit(
-              dashboardRepository: context.read<DashboardRepository>(),
-            )..loadDashboard(token),
-          ),
+          BlocProvider.value(value: _dashboardCubit),
           BlocProvider(
             create: (_) => ProfileCubit(
               profileRepository: context.read<ProfileRepository>(),
@@ -216,13 +276,11 @@ class MainLayoutScreenState extends State<MainLayoutScreen> {
               academicsRepository: context.read<AcademicsRepository>(),
             )..loadTasks(token),
           ),
-          BlocProvider(
-            create: (_) => _examsCubit = ExamsCubit(
-              examsRepository: context.read<ExamsRepository>(),
-            )..loadStudentExams(token),
-          ),
+          BlocProvider.value(value: _examsCubit),
           BlocProvider.value(
-            value: context.read<LiveClassesCubit>()..fetchLiveClasses(token),
+            // Fetched once in initState; doing it here re-fetched on
+            // every rebuild (each tab switch).
+            value: context.read<LiveClassesCubit>(),
           ),
         ],
         child: Scaffold(
@@ -232,28 +290,83 @@ class MainLayoutScreenState extends State<MainLayoutScreen> {
           drawer: _showSideMenu ? _buildDrawer() : null,
           body: SafeArea(
             bottom: false,
-            child: IndexedStack(index: _selectedIndex, children: _screens),
-          ),
-          floatingActionButton: FloatingActionButton.small(
-            heroTag: 'voice-assistant',
-            onPressed: _openVoiceAssistant,
-            backgroundColor: AppTheme.primary,
-            foregroundColor: Colors.white,
-            tooltip: 'Open voice assistant',
-            child: const Icon(Icons.mic_rounded),
-          ),
-          floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-          bottomNavigationBar: Container(
-            margin: EdgeInsets.fromLTRB(16.w, 0, 16.w, 16.h),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24.r),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-                  blurRadius: 20,
-                  offset: Offset(0, 6.h),
-                ),
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                for (var i = 0; i < _screens.length; i++)
+                  _builtTabs.contains(i)
+                      ? _screens[i]
+                      : const SizedBox.shrink(),
               ],
+            ),
+          ),
+          // The voice-assistant mic sits beside the bottom bar instead of
+          // floating over the page, so it never covers cards or buttons
+          // (QA 2.2: it sat on "Ask Doubt", "Analysis" and course prices).
+          bottomNavigationBar: Padding(
+            padding: EdgeInsets.fromLTRB(16.w, 0, 12.w, 16.h),
+            child: Row(
+              children: [
+                Expanded(child: _buildBottomBar(isDark)),
+                SizedBox(width: 8.w),
+                _buildVoiceButton(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVoiceButton() {
+    return Tooltip(
+      message: 'Open voice assistant',
+      child: Material(
+        color: AppTheme.primary,
+        shape: const CircleBorder(),
+        elevation: 3,
+        shadowColor: AppTheme.primary.withValues(alpha: 0.4),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: _openVoiceAssistant,
+          child: SizedBox(
+            width: 48.h,
+            height: 48.h,
+            child: Icon(Icons.mic_rounded, color: Colors.white, size: 22.sp),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomBar(bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24.r),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+            blurRadius: 20,
+            offset: Offset(0, 6.h),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24.r),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Container(
+            height: 64.h,
+            decoration: BoxDecoration(
+              color: isDark
+                  ? AppTheme.darkSurface.withValues(alpha: 0.85)
+                  : Colors.white.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(24.r),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.05)
+                    : const Color(0xFFE5E7EB),
+              ),
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(24.r),

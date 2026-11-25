@@ -51,13 +51,22 @@ class ExtrasState extends Equatable {
   }
 
   @override
-  List<Object?> get props => [status, liveClasses, resources, fees, transactions, ptmSlots, ptmBookings, error];
+  List<Object?> get props => [
+    status,
+    liveClasses,
+    resources,
+    fees,
+    transactions,
+    ptmSlots,
+    ptmBookings,
+    error,
+  ];
 }
 
 class ExtrasCubit extends Cubit<ExtrasState> {
   ExtrasCubit({required ExtrasRepository extrasRepository})
-      : _extrasRepository = extrasRepository,
-        super(const ExtrasState());
+    : _extrasRepository = extrasRepository,
+      super(const ExtrasState());
 
   final ExtrasRepository _extrasRepository;
 
@@ -109,13 +118,23 @@ class ExtrasCubit extends Cubit<ExtrasState> {
     try {
       final slots = await _extrasRepository.getPtmSlots(token);
       final bookings = await _extrasRepository.getPtmBookings(token);
-      emit(state.copyWith(status: ExtrasStatus.success, ptmSlots: slots, ptmBookings: bookings));
+      emit(
+        state.copyWith(
+          status: ExtrasStatus.success,
+          ptmSlots: slots,
+          ptmBookings: bookings,
+        ),
+      );
     } catch (e) {
       emit(state.copyWith(status: ExtrasStatus.failure, error: e.toString()));
     }
   }
 
-  Future<void> bookPtmSlot(String token, String slotId, Map<String, dynamic> data) async {
+  Future<void> bookPtmSlot(
+    String token,
+    String slotId,
+    Map<String, dynamic> data,
+  ) async {
     try {
       await _extrasRepository.bookPtmSlot(token, slotId, data);
       await loadPtmData(token);

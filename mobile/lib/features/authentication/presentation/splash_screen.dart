@@ -102,10 +102,10 @@ class _SplashScreenState extends State<SplashScreen>
           _checkAndNavigate();
         }
       },
-      // Dark gradient screen: light status-bar icons.
       child: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle.light,
+        value: AppTheme.darkScreenSystemUi,
         child: Scaffold(
+          backgroundColor: AppTheme.authBackground,
           body: Stack(
             children: [
               // Background Gradient

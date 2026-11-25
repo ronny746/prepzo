@@ -38,7 +38,8 @@ class _NeetCountdownWidgetState extends State<NeetCountdownWidget> {
             setState(() {
               _examTitle = neet['examTitle']?.toString() ?? _examTitle;
               _examDateStr = neet['examDate']?.toString() ?? _examDateStr;
-              _targetDateLabel = neet['targetDateLabel']?.toString() ?? _targetDateLabel;
+              _targetDateLabel =
+                  neet['targetDateLabel']?.toString() ?? _targetDateLabel;
               _subtitle = neet['subtitle']?.toString() ?? _subtitle;
               _daysLabel = neet['daysLabel']?.toString() ?? _daysLabel;
             });
