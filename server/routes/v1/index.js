@@ -27,6 +27,7 @@ const analyticsReportsRouter = require('../../modules/analytics-reports');
 const inventoryRouter = require('../../modules/inventory');
 const securityAuditRouter = require('../../modules/security-audit');
 const integrationsRouter = require('../../modules/integrations');
+const prepzoPaperImportRouter = require('../../modules/integrations/prepzo-paper-import.routes');
 const systemConfigRouter = require('../../modules/system-config');
 const backupsRouter = require('../../modules/backups');
 const broadcastRouter = require('../../modules/broadcast');
@@ -47,7 +48,6 @@ const publicBannersRouter = require('../../modules/banners/public.banners.routes
 const recycleBinRouter = require('../../modules/recycle-bin/recycle-bin.routes');
 const performanceFlagsRouter = require('../../modules/performance-flags/performance-flags.routes');
 const operationsRouter = require('../../modules/operations/operations.routes');
-const prepzoPaperImportRouter = require('../../modules/integrations/prepzo-paper-import.routes');
 
 // Mount routes
 router.use('/recycle-bin', recycleBinRouter);

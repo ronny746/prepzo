@@ -50,4 +50,8 @@ export const studentAPI = {
   getPracticeSession: (id) => axiosInstance.get(`/student/practice/${id}`),
   savePracticeProgress: (id, data) => axiosInstance.put(`/student/practice/${id}/progress`, data),
   submitPracticeSession: (id, data) => axiosInstance.post(`/student/practice/${id}/submit`, data),
+
 };
+
+export const studentApi = studentAPI;
+export default studentAPI;

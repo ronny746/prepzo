@@ -20,6 +20,7 @@ function QuestionBankBuilderContent() {
   const { id } = useParams();
   const searchParams = useSearchParams();
   const subjectId = searchParams.get('subjectId');
+  const classId = searchParams.get('classId');
   
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -56,6 +57,8 @@ function QuestionBankBuilderContent() {
     const tabParam = searchParams.get('tab');
     if (tabParam === 'FULL_PAPERS') {
       setBankType('FULL_PAPER');
+    } else if (tabParam === 'PART_PAPERS') {
+      setBankType('PART_PAPER');
     }
   }, [id, subjectId, searchParams]);
 
@@ -112,6 +115,9 @@ function QuestionBankBuilderContent() {
     formData.append('bankType', bankType);
     if (subjectId && bankType === 'SUBJECT_WISE') {
       formData.append('subjectId', subjectId);
+    }
+    if (classId && bankType === 'SUBJECT_WISE') {
+      formData.append('classId', classId);
     }
 
     try {
@@ -190,7 +196,11 @@ function QuestionBankBuilderContent() {
 
   const handleSaveBank = async () => {
     // Default title if empty since it's now optional in UI but required in schema
-    const title = bankData.title || (bankType === 'FULL_PAPER' ? `Full Paper ${new Date().toLocaleDateString()}` : `Question Bank ${new Date().toLocaleDateString()}`);
+    const title = bankData.title || (
+      bankType === 'FULL_PAPER' ? `Full Paper ${new Date().toLocaleDateString()}` :
+      bankType === 'PART_PAPER' ? `Part Paper ${new Date().toLocaleDateString()}` :
+      `Question Bank ${new Date().toLocaleDateString()}`
+    );
     
     const newQuestions = questions.filter(q => !q._id);
     
@@ -206,6 +216,7 @@ function QuestionBankBuilderContent() {
         title: title,
         description: bankData.description,
         bankType: bankType,
+        classId: (classId && classId !== 'general') ? classId : undefined,
         questions: id ? questions : newQuestions
       };
 
@@ -371,7 +382,7 @@ function QuestionBankBuilderContent() {
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">
-                  {bankType === 'FULL_PAPER' ? 'Import Full Paper (.docx or .pdf)' : 'Import Subject Questions (.docx or .pdf)'}
+                  {bankType === 'FULL_PAPER' ? 'Import Full Paper (.docx or .pdf)' : bankType === 'PART_PAPER' ? 'Import Part Paper (.docx or .pdf)' : 'Import Subject Questions (.docx or .pdf)'}
                 </h3>
                 <p className="text-sm text-gray-500 mt-1 max-w-lg">
                   Use DOCX for auto-parsing. Use PDF to crop and manually insert images.
@@ -431,7 +442,27 @@ function QuestionBankBuilderContent() {
                         <div className="space-y-4">
                           <p className="font-bold text-gray-700">Editing Q{idx + 1}</p>
                           
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 p-3 bg-white border rounded-lg shadow-sm">
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 p-3 bg-white border rounded-lg shadow-sm">
+                            <div>
+                              <label className="text-[10px] font-semibold text-gray-500 block mb-1 uppercase tracking-wider">Type</label>
+                              <select 
+                                className="w-full border rounded p-1.5 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 font-semibold"
+                                value={editQuestionState.type || 'MCQ'} 
+                                onChange={(e) => setEditQuestionState({...editQuestionState, type: e.target.value})}
+                              >
+                                <option value="MCQ">MCQ (Single Correct)</option>
+                                <option value="MULTIPLE_CORRECT">Multiple Correct</option>
+                                <option value="INTEGER">Integer</option>
+                                <option value="NUMERICAL">Numerical</option>
+                                <option value="TRUE_FALSE">True / False</option>
+                                <option value="FILL_BLANKS">Fill Blanks</option>
+                                <option value="ASSERTION_REASON">Assertion - Reason</option>
+                                <option value="MATCH_THE_COLUMN">Match Column</option>
+                                <option value="STATEMENT_BASED">Statement Based</option>
+                                <option value="PARAGRAPH">Paragraph</option>
+                                <option value="SUBJECTIVE">Subjective</option>
+                              </select>
+                            </div>
                             <div>
                               <label className="text-[10px] font-semibold text-gray-500 block mb-1 uppercase tracking-wider">Subject</label>
                               <input type="text" className="w-full border rounded p-1.5 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500" value={editQuestionState.subjectName || (typeof editQuestionState.subject === 'string' ? editQuestionState.subject : editQuestionState.subject?.name) || ''} onChange={(e) => setEditQuestionState({...editQuestionState, subjectName: e.target.value})} placeholder="Subject name" />
@@ -468,9 +499,27 @@ function QuestionBankBuilderContent() {
                               onChange={(content) => setEditQuestionState({...editQuestionState, questionText: content})}
                             />
                           </div>
+
+                          {/* Numerical / Subjective Answer Input */}
+                          {(!editQuestionState.options || editQuestionState.options.length === 0 || ['INTEGER', 'NUMERICAL', 'FILL_BLANKS', 'SUBJECTIVE'].includes(editQuestionState.type)) && (
+                            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                              <label className="text-xs font-bold text-blue-900 block mb-1">Correct Answer / Value ([Ans])</label>
+                              <input 
+                                type="text" 
+                                className="w-full border border-blue-300 rounded p-2 text-sm font-mono focus:border-primary-500 focus:ring-1 focus:ring-primary-500 bg-white" 
+                                value={editQuestionState.correctAnswerText || ''} 
+                                onChange={(e) => setEditQuestionState({...editQuestionState, correctAnswerText: e.target.value})} 
+                                placeholder="e.g. 1 or 45 or True" 
+                              />
+                              <p className="text-[11px] text-blue-600 mt-1">Numerical or text answer evaluated automatically.</p>
+                            </div>
+                          )}
+
                           <div className="space-y-4">
                             <div className="flex justify-between items-center border-b pb-1">
-                              <label className="text-xs font-semibold text-gray-500 block">Options</label>
+                              <label className="text-xs font-semibold text-gray-500 block">
+                                Options {editQuestionState.options?.length === 0 && '(Optional for Integer / Fill Blanks)'}
+                              </label>
                               <Button 
                                 variant="outline" 
                                 size="sm" 
@@ -516,13 +565,19 @@ function QuestionBankBuilderContent() {
                                     <Trash2 className="w-4 h-4" />
                                   </button>
                                   <input 
-                                    type="radio"
+                                    type={editQuestionState.type === 'MULTIPLE_CORRECT' ? 'checkbox' : 'radio'}
                                     name={`correct-${idx}`}
                                     checked={opt.isCorrect}
-                                    className="w-4 h-4 text-primary-600"
-                                    onChange={() => {
-                                      const newOpts = editQuestionState.options.map((o, i) => ({...o, isCorrect: i === oIdx}));
-                                      setEditQuestionState({...editQuestionState, options: newOpts});
+                                    className="w-4 h-4 text-primary-600 rounded"
+                                    onChange={(e) => {
+                                      if (editQuestionState.type === 'MULTIPLE_CORRECT') {
+                                        const newOpts = [...editQuestionState.options];
+                                        newOpts[oIdx].isCorrect = e.target.checked;
+                                        setEditQuestionState({...editQuestionState, options: newOpts});
+                                      } else {
+                                        const newOpts = editQuestionState.options.map((o, i) => ({...o, isCorrect: i === oIdx}));
+                                        setEditQuestionState({...editQuestionState, options: newOpts});
+                                      }
                                     }}
                                   />
                                   <span className="text-[10px] text-gray-500">Correct</span>
@@ -562,6 +617,7 @@ function QuestionBankBuilderContent() {
                             <span className="font-bold text-gray-700 w-8">Q{idx + 1}.</span>
                             <div className="flex-1">
                               <div className="flex flex-wrap gap-2 mb-1">
+                                <span className="text-xs bg-indigo-100 text-indigo-700 px-2 rounded-full font-semibold">{q.type || 'MCQ'}</span>
                                 <span className="text-xs bg-gray-200 text-gray-700 px-2 rounded-full">{q.subjectName || (typeof q.subject === 'string' ? q.subject : q.subject?.name) || 'General'}</span>
                                 {(q.chapterName || (typeof q.chapter === 'string' ? q.chapter : q.chapter?.name)) && (q.chapterName || (typeof q.chapter === 'string' ? q.chapter : q.chapter?.name)) !== 'General' && <span className="text-xs bg-purple-100 text-purple-700 px-2 rounded-full">Ch: {q.chapterName || (typeof q.chapter === 'string' ? q.chapter : q.chapter?.name)}</span>}
                                 {(q.topicName || (typeof q.topic === 'string' ? q.topic : q.topic?.name)) && (q.topicName || (typeof q.topic === 'string' ? q.topic : q.topic?.name)) !== 'General' && <span className="text-xs bg-blue-100 text-blue-700 px-2 rounded-full">Topic: {q.topicName || (typeof q.topic === 'string' ? q.topic : q.topic?.name)}</span>}
@@ -571,19 +627,30 @@ function QuestionBankBuilderContent() {
                             </div>
                           </div>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-11">
-                            {q.options?.map((opt, oIdx) => (
-                              <div key={oIdx} className={`p-3 rounded-lg border ${opt.isCorrect ? 'bg-success-50 border-success-200' : 'bg-white border-gray-200'}`}>
-                                <div className="flex items-center">
-                                  <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold mr-3 ${opt.isCorrect ? 'bg-success-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                                    {String.fromCharCode(65 + oIdx)}
-                                  </span>
-                                  <span dangerouslySetInnerHTML={{ __html: opt.text }} />
+                          {q.options && q.options.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-11">
+                              {q.options.map((opt, oIdx) => (
+                                <div key={oIdx} className={`p-3 rounded-lg border ${opt.isCorrect ? 'bg-success-50 border-success-200' : 'bg-white border-gray-200'}`}>
+                                  <div className="flex items-center">
+                                    <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold mr-3 ${opt.isCorrect ? 'bg-success-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                                      {String.fromCharCode(65 + oIdx)}
+                                    </span>
+                                    <span dangerouslySetInnerHTML={{ __html: opt.text }} />
+                                  </div>
                                 </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="pl-11 py-1">
+                              <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-900 rounded-lg text-sm font-semibold">
+                                <span>Correct Answer / Value:</span>
+                                <span className="font-mono bg-white px-2 py-0.5 rounded border border-blue-300 text-blue-700 font-bold">
+                                  {q.correctAnswerText || 'Not specified'}
+                                </span>
                               </div>
-                            ))}
-                          </div>
-                          {(!q.options || q.options.filter(o => o.isCorrect).length === 0) && (
+                            </div>
+                          )}
+                          {((q.options && q.options.length > 0 && !q.options.some(o => o.isCorrect)) || (!q.options || q.options.length === 0) && !q.correctAnswerText) && (
                             <p className="text-sm text-error-500 pl-11">⚠️ Warning: No correct answer ([Ans]) specified for this question.</p>
                           )}
                           {q.explanation && (

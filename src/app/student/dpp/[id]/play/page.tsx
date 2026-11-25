@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { Clock, CheckCircle, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, ChevronRight, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/Button.jsx';
+import ImageZoomModal from '@/components/ui/ImageZoomModal';
 import { studentAPI } from '@/api/index.js';
 import toast from 'react-hot-toast';
 
@@ -22,6 +23,19 @@ export default function DPPPlayer() {
   const [currentQIdx, setCurrentQIdx] = useState(0);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [activeSubject, setActiveSubject] = useState(null);
+  const [zoomedImage, setZoomedImage] = useState(null);
+
+  const handleContentClick = (e) => {
+    const target = e.target;
+    if (target && target.tagName === 'IMG') {
+      e.preventDefault();
+      e.stopPropagation();
+      const src = target.src;
+      if (src) {
+        setZoomedImage(src);
+      }
+    }
+  };
 
   // Load Session
   useEffect(() => {
@@ -119,12 +133,40 @@ export default function DPPPlayer() {
     }
   };
 
+  const handleNumericAnswerChange = async (questionId, value) => {
+    if (submitted) return;
+    
+    const newAnswers = [...session.answers];
+    const existingIdx = newAnswers.findIndex(a => a.questionId === questionId);
+    
+    if (existingIdx > -1) {
+      newAnswers[existingIdx].numericAnswer = value;
+      newAnswers[existingIdx].subjectiveAnswerText = value;
+      newAnswers[existingIdx].status = value ? 'ANSWERED' : 'NOT_ANSWERED';
+    } else {
+      newAnswers.push({ questionId, numericAnswer: value, subjectiveAnswerText: value, status: value ? 'ANSWERED' : 'NOT_ANSWERED' });
+    }
+    setSession({ ...session, answers: newAnswers });
+
+    try {
+      await studentAPI.savePracticeProgress(id, {
+        questionId,
+        numericAnswer: value,
+        subjectiveAnswerText: value,
+        status: value ? 'ANSWERED' : 'NOT_ANSWERED',
+        timeSpentSeconds: timeSpentPerQuestion[questionId] || 0
+      });
+    } catch (e) {
+      // silent
+    }
+  };
+
   const clearAnswer = async (questionId) => {
     if (submitted) return;
     const newAnswers = session.answers.filter(a => a.questionId !== questionId);
     setSession({ ...session, answers: newAnswers });
     try {
-      await studentAPI.savePracticeProgress(id, { questionId, selectedOptionId: null, status: 'NOT_ANSWERED' });
+      await studentAPI.savePracticeProgress(id, { questionId, selectedOptionId: null, numericAnswer: '', status: 'NOT_ANSWERED' });
     } catch (e) {
       toast.error('Failed to clear answer');
     }
@@ -134,8 +176,11 @@ export default function DPPPlayer() {
     if (submitting) return;
     setSubmitting(true);
     try {
-      const res = await studentAPI.submitPracticeSession(id, { totalTimeSpentSeconds: timeSpent, timeSpentPerQuestion });
-      setSession(res.data.data);
+      await studentAPI.submitPracticeSession(id, { totalTimeSpentSeconds: timeSpent, timeSpentPerQuestion });
+      // Reload after submission so this review has the server-calculated,
+      // anonymised class benchmark rather than a client-side estimate.
+      const refreshed = await studentAPI.getPracticeSession(id);
+      setSession(refreshed.data.data);
       setSubmitted(true);
       setShowSubmitModal(false);
       toast.success('DPP Submitted Successfully!');
@@ -231,7 +276,10 @@ export default function DPPPlayer() {
         {/* Question Area */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 relative">
            {currentQuestion ? (
-             <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border p-6 md:p-8 relative z-10">
+             <div 
+               onClickCapture={handleContentClick}
+               className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border p-6 md:p-8 relative z-10"
+             >
                 <div className="flex justify-between items-center border-b pb-4 mb-6">
                   <h2 className="text-xl font-bold text-gray-800">Question {currentQIdx + 1}</h2>
                   <div className="flex gap-4 text-sm font-semibold">
@@ -241,49 +289,80 @@ export default function DPPPlayer() {
                 </div>
 
                 {/* Question Text */}
-                <div className="prose max-w-none text-gray-900 text-lg mb-8" dangerouslySetInnerHTML={{ __html: currentQuestion.questionText }} />
+                <div className="prose max-w-none text-gray-900 text-lg mb-8 question-content" dangerouslySetInnerHTML={{ __html: currentQuestion.questionText }} />
 
-                {/* Options */}
-                <div className="space-y-4">
-                  {currentQuestion.options?.map((opt, idx) => {
-                    const isSelected = currentAnswer?.selectedOptionId === opt._id;
-                    
-                    let optionClass = "border-gray-200 hover:border-primary-200 hover:bg-gray-50";
-                    let circleClass = "border-gray-300";
-                    let innerCircle = null;
-
-                    if (submitted) {
-                      if (opt.isCorrect) {
-                        optionClass = "border-success-500 bg-success-50";
-                        circleClass = "border-success-500 bg-success-500 text-white";
-                        innerCircle = <div className="w-2 h-2 bg-white rounded-full"/>;
-                      } else if (isSelected && !opt.isCorrect) {
-                        optionClass = "border-danger-500 bg-danger-50";
-                        circleClass = "border-danger-500 bg-danger-500 text-white";
-                        innerCircle = <div className="w-2 h-2 bg-white rounded-full"/>;
-                      } else {
-                        optionClass = "border-gray-200 opacity-60";
-                      }
-                    } else if (isSelected) {
-                      optionClass = "border-primary-500 bg-primary-50";
-                      circleClass = "border-primary-500 bg-primary-500 text-white";
-                      innerCircle = <div className="w-2 h-2 bg-white rounded-full"/>;
-                    }
-
-                    return (
-                      <div 
-                        key={opt._id}
-                        onClick={() => !submitted && handleOptionSelect(currentQuestion.questionId, opt._id)}
-                        className={`flex items-start p-4 rounded-xl border-2 transition-all ${submitted ? 'cursor-default' : 'cursor-pointer'} ${optionClass}`}
-                      >
-                        <div className={`w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-full border-2 mr-4 mt-0.5 ${circleClass}`}>
-                          {innerCircle}
-                        </div>
-                        <div className="flex-1 text-gray-800 prose" dangerouslySetInnerHTML={{ __html: opt.text }} />
+                {/* Options or Numerical Input */}
+                {(!currentQuestion.options || currentQuestion.options.length === 0) ? (
+                  <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 space-y-4">
+                    <label className="text-sm font-bold text-gray-700 block">Enter Numerical / Text Answer:</label>
+                    <input
+                      type="text"
+                      disabled={submitted}
+                      value={currentAnswer?.numericAnswer ?? currentAnswer?.subjectiveAnswerText ?? ''}
+                      onChange={(e) => handleNumericAnswerChange(currentQuestion.questionId, e.target.value)}
+                      placeholder="Type your answer"
+                      className="w-full text-lg font-bold font-mono px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                    />
+                    {submitted && currentQuestion.correctAnswerText && (
+                      <div className="p-3 bg-success-50 border border-success-200 rounded-lg text-success-800 text-sm font-semibold">
+                        Correct Answer: <span className="font-mono font-bold">{currentQuestion.correctAnswerText}</span>
                       </div>
-                    );
-                  })}
-                </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {currentQuestion.options?.map((opt, idx) => {
+                      const optionLabel = opt.label || String.fromCharCode(65 + idx);
+                      const isSelected = currentAnswer?.selectedOptionId === opt._id;
+                      
+                      let optionClass = "border-gray-200 hover:border-primary-200 hover:bg-gray-50";
+                      let circleClass = "border-gray-300 bg-gray-100 text-gray-700";
+                      let badge = null;
+
+                      if (submitted) {
+                        if (opt.isCorrect) {
+                          optionClass = "border-success-500 bg-success-50";
+                          circleClass = "border-success-500 bg-success-500 text-white";
+                          badge = (
+                            <span className="text-xs font-bold text-success-700 bg-success-100 px-2.5 py-1 rounded-full flex items-center gap-1 border border-success-300 shrink-0 ml-2">
+                              <CheckCircle className="w-3.5 h-3.5 text-success-600" /> {isSelected ? 'Your Choice (Correct)' : 'Correct Answer'}
+                            </span>
+                          );
+                        } else if (isSelected && !opt.isCorrect) {
+                          optionClass = "border-danger-500 bg-danger-50";
+                          circleClass = "border-danger-500 bg-danger-500 text-white";
+                          badge = (
+                            <span className="text-xs font-bold text-danger-700 bg-danger-100 px-2.5 py-1 rounded-full flex items-center gap-1 border border-danger-300 shrink-0 ml-2">
+                              <XCircle className="w-3.5 h-3.5 text-danger-600" /> Your Choice (Incorrect)
+                            </span>
+                          );
+                        } else {
+                          optionClass = "border-gray-200 opacity-60";
+                          circleClass = "border-gray-200 bg-gray-100 text-gray-400";
+                        }
+                      } else if (isSelected) {
+                        optionClass = "border-primary-500 bg-primary-50 ring-1 ring-primary-500";
+                        circleClass = "border-primary-500 bg-primary-500 text-white";
+                      }
+
+                      return (
+                        <div 
+                          key={opt._id}
+                          onClick={() => !submitted && handleOptionSelect(currentQuestion.questionId, opt._id)}
+                          className={`flex items-start justify-between gap-3 p-4 rounded-xl border-2 transition-all ${submitted ? 'cursor-default' : 'cursor-pointer'} ${optionClass}`}
+                        >
+                          <div className="flex items-start gap-4 flex-1 min-w-0">
+                            <div className={`w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full border-2 text-xs font-bold transition-colors select-none mt-0.5 ${circleClass}`}>
+                              {optionLabel}
+                            </div>
+                            <div className="flex-1 text-gray-800 prose min-w-0 option-content" dangerouslySetInnerHTML={{ __html: opt.text }} />
+                          </div>
+                          {badge && <div className="shrink-0">{badge}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* Solution/Explanation (Only visible when submitted) */}
                 {submitted && (
@@ -292,23 +371,29 @@ export default function DPPPlayer() {
                       <h3 className="font-bold text-blue-900 mb-2 flex items-center">
                         <CheckCircle className="w-5 h-5 mr-2" /> Solution & Explanation
                       </h3>
-                      <div className="prose max-w-none text-blue-800" dangerouslySetInnerHTML={{ __html: currentAnswer?.explanation || currentQuestion?.explanation || '<p>No explanation provided.</p>' }} />
+                      <div className="prose max-w-none text-blue-800 question-content" dangerouslySetInnerHTML={{ __html: currentAnswer?.explanation || currentQuestion?.explanation || '<p>No explanation provided.</p>' }} />
                     </div>
                     
-                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-gray-700">
-                        <Clock className="w-5 h-5 text-gray-500" />
-                        <span className="font-semibold">Time Spent on this Question:</span>
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 grid gap-3 sm:grid-cols-2">
+                      <div className="flex items-center justify-between gap-3 text-gray-700">
+                        <span className="flex items-center gap-2 font-semibold"><Clock className="w-5 h-5 text-gray-500" /> Your time</span>
+                        <span className="font-bold text-gray-900">{formatTime(currentQuestion.studentTimeSeconds ?? currentAnswer?.timeSpentSeconds ?? 0)}</span>
                       </div>
-                      <div className="font-bold text-gray-900">
-                        {formatTime(currentAnswer?.timeSpentSeconds || 0)}
+                      <div className="flex items-center justify-between gap-3 border-t pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0 text-gray-700">
+                        <span className="font-semibold">DPP average</span>
+                        <span className="font-bold text-gray-900">{currentQuestion.averageTimeSeconds > 0 ? formatTime(currentQuestion.averageTimeSeconds) : 'Not available yet'}</span>
                       </div>
-                      {(currentAnswer?.timeSpentSeconds || 0) < 10 ? (
-                        <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-800 border border-rose-200">Under 10s: possible guess / not read</span>
-                      ) : (currentAnswer?.timeSpentSeconds || 0) > 300 ? (
-                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800 border border-amber-200">Over 5m: time-heavy</span>
-                      ) : (
-                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800 border border-emerald-200">Normal time</span>
+                      <p className="text-xs text-gray-500 sm:col-span-2">Based on {currentQuestion.attemptedStudentCount || 0} student{currentQuestion.attemptedStudentCount === 1 ? '' : 's'} who attempted this question.</p>
+                      {(currentQuestion.studentTimeSeconds ?? currentAnswer?.timeSpentSeconds ?? 0) > 0 && (
+                        <div className="sm:col-span-2">
+                          {(currentQuestion.studentTimeSeconds ?? currentAnswer?.timeSpentSeconds ?? 0) < 10 ? (
+                            <span className="inline-flex rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-800 border border-rose-200">Under 10s: possible guess / not read</span>
+                          ) : (currentQuestion.studentTimeSeconds ?? currentAnswer?.timeSpentSeconds ?? 0) > 300 ? (
+                            <span className="inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 border border-amber-200">Over 5m: time-heavy</span>
+                          ) : (
+                            <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 border border-emerald-200">Normal time</span>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -435,6 +520,12 @@ export default function DPPPlayer() {
           </div>
         </div>
       )}
+
+      {/* Full Image Zoom Lightbox */}
+      <ImageZoomModal 
+        imageUrl={zoomedImage} 
+        onClose={() => setZoomedImage(null)} 
+      />
     </div>
   );
 }

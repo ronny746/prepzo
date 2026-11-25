@@ -23,6 +23,9 @@
         "website": "Website",
         "websitePlaceholder": "e.g. https://example.com"
       }
+    },
+    "questionBanks": {
+      "createExam": "Create Exam"
     }
   },
   "student": {

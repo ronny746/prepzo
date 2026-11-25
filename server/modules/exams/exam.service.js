@@ -64,14 +64,54 @@ class ExamService {
     let html = result.value; // The generated HTML
 
     try {
-      const mathData = wordMath.read(fileBuffer).maths || [];
+      const rawMathData = wordMath.read(fileBuffer).maths || [];
+      // Modern browsers (Chrome, Edge, Safari) use MathML Core which deprecated and removed <mfenced>.
+      // Convert <mfenced open="[" close="]"> to <mrow><mo stretchy="true">[</mo>...<mo stretchy="true">]</mo></mrow>
+      const mathData = rawMathData.map(m => {
+        if (!m || !m.includes('<mfenced')) return m;
+        try {
+          const $m = cheerio.load(m, { xmlMode: true, decodeEntities: false });
+          let safety = 20;
+          while ($m('mfenced').length > 0 && safety > 0) {
+            safety--;
+            $m('mfenced').each((_, el) => {
+              if ($m(el).find('mfenced').length > 0) return;
+              const open = el.attribs.open !== undefined ? el.attribs.open : '(';
+              const close = el.attribs.close !== undefined ? el.attribs.close : ')';
+              const separators = el.attribs.separators !== undefined ? el.attribs.separators.split('') : [','];
+
+              let inner = '';
+              $m(el).contents().each((cIdx, child) => {
+                if (cIdx > 0 && separators.length > 0) {
+                  const sep = separators[Math.min(cIdx - 1, separators.length - 1)].trim();
+                  if (sep) inner += `<mo>${sep}</mo>`;
+                }
+                inner += $m.html(child);
+              });
+
+              let replacement = '<mrow>';
+              if (open && open.trim()) replacement += `<mo stretchy="true">${open}</mo>`;
+              replacement += inner;
+              if (close && close.trim()) replacement += `<mo stretchy="true">${close}</mo>`;
+              replacement += '</mrow>';
+
+              $m(el).replaceWith(replacement);
+            });
+          }
+          return $m.xml();
+        } catch (mErr) {
+          console.error('Error converting mfenced in math element:', mErr);
+          return m;
+        }
+      });
+
       // Use global regex and a function to avoid $ substitution bugs, and handle missing math elements gracefully
       html = html.replace(/&lt;\/thisismath&gt;/g, () => {
         const mathElement = mathData.shift();
         if (mathElement) {
-          return `<span class="math-equation">${mathElement}</span>`;
+          return `<span class="math-equation" contenteditable="false">${mathElement}</span>`;
         }
-        return `<span class="math-equation text-red-500">[Math Parse Error]</span>`;
+        return `<span class="math-equation text-red-500" contenteditable="false">[Math Parse Error]</span>`;
       });
     } catch (err) {
       console.error("Math parse error:", err);
@@ -82,44 +122,74 @@ class ExamService {
 
     const questions = [];
     let currentQuestion = null;
+    let currentClass = '';
     let currentSubject = 'General';
     let currentChapter = 'General';
     let currentTopic = 'General';
     let currentDifficulty = 'Medium';
-    let currentAppendTarget = 'QUESTION'; // 'QUESTION' or 'OPTION'
+    let currentParagraph = '';
+    let currentAppendTarget = 'QUESTION'; // 'PARAGRAPH', 'QUESTION', 'OPTION', 'EXPLANATION'
 
-    // A simple state machine by iterating over all root elements in the generated HTML
-    // Mammoth usually wraps paragraphs in <p> tags.
+    // A comprehensive state machine by iterating over all root elements in the generated HTML
     $('body').children().each((i, el) => {
       const text = $(el).text().trim();
       const preserveTags = ['table', 'ul', 'ol', 'img', 'pre', 'blockquote'];
       const htmlContent = preserveTags.includes(el.name) ? $.html(el) : ($(el).html() || '').trim();
 
-      // Look for tags like [SUBJECT: name], CHAPTER: name, TOPIC: name, [Q], [A], [B], [C], [D], [Ans]
-      if (text.match(/^\[?SUBJECT\s*:\s*([^\]]+)/i)) {
+      // Look for tags like [CLASS: name], [SUBJECT: name], CHAPTER: name, TOPIC: name, [Para], [Q], [A], [Ans], [Sol]
+      if (text.match(/^\[?CLASS\s*:\s*([^\]]+)/i)) {
+        currentClass = text.match(/^\[?CLASS\s*:\s*([^\]]+)/i)[1].trim();
+        if (currentQuestion && currentQuestion.options.length === 0 && !currentQuestion.explanation) {
+          currentQuestion.className = currentClass;
+        }
+      } else if (text.match(/^\[?SUBJECT\s*:\s*([^\]]+)/i)) {
         currentSubject = text.match(/^\[?SUBJECT\s*:\s*([^\]]+)/i)[1].trim();
-        if (currentQuestion) currentQuestion.subjectName = currentSubject;
+        currentParagraph = ''; // Reset comprehension passage on subject change
+        if (currentQuestion && currentQuestion.options.length === 0 && !currentQuestion.explanation) {
+          currentQuestion.subjectName = currentSubject;
+        }
       } else if (text.match(/^\[?CHAPTER\s*:\s*([^\]]+)/i)) {
         currentChapter = text.match(/^\[?CHAPTER\s*:\s*([^\]]+)/i)[1].trim();
-        if (currentQuestion) currentQuestion.chapterName = currentChapter;
+        currentParagraph = ''; // Reset comprehension passage on chapter change
+        if (currentQuestion && currentQuestion.options.length === 0 && !currentQuestion.explanation) {
+          currentQuestion.chapterName = currentChapter;
+        }
       } else if (text.match(/^\[?TOPIC\s*:\s*([^\]]+)/i)) {
         currentTopic = text.match(/^\[?TOPIC\s*:\s*([^\]]+)/i)[1].trim();
-        if (currentQuestion) currentQuestion.topicName = currentTopic;
+        if (currentQuestion && currentQuestion.options.length === 0 && !currentQuestion.explanation) {
+          currentQuestion.topicName = currentTopic;
+        }
+      } else if (text.match(/^-{3,}$/)) {
+        // Horizontal divider ends any active comprehension paragraph block
+        currentParagraph = '';
       } else if (text.match(/^\[?DIFFICULTY\s*:\s*(Easy|Medium|Hard)\]?/i)) {
-        // e.g. [DIFFICULTY: Easy] or DIFFICULTY: Hard
         const matched = text.match(/^\[?DIFFICULTY\s*:\s*(Easy|Medium|Hard)\]?/i)[1];
         currentDifficulty = matched.charAt(0).toUpperCase() + matched.slice(1).toLowerCase();
-        if (currentQuestion) currentQuestion.difficulty = currentDifficulty;
-      } else if (text.startsWith('[Q]') || text.startsWith('Q ') || text.match(/^Q\d+/i)) {
+        if (currentQuestion && currentQuestion.options.length === 0 && !currentQuestion.explanation) {
+          currentQuestion.difficulty = currentDifficulty;
+        }
+      } else if (text.match(/^\[?(?:Para|Paragraph|Comprehension)[.\s]*\]/i)) {
+        // Start of a comprehension / paragraph block
+        currentParagraph = htmlContent.replace(/^(?:\s*<[^>]+>)*\s*\[?(?:Para|Paragraph|Comprehension)[.\s]*\]\s*(?:<\/[^>]+>\s*)*\s*/i, '');
+        currentAppendTarget = 'PARAGRAPH';
+      } else if (text.startsWith('[Q]') || text.startsWith('Q ') || text.match(/^Q\d+[.:\s]*/i) || text.match(/^\[Question\]/i)) {
         if (currentQuestion) questions.push(currentQuestion);
 
+        let qText = htmlContent.replace(/^(?:\s*<[^>]+>)*\s*(?:\[Q\]|\[Question\]|Q\s*|Q\d+[.:\s]*)\s*(?:<\/[^>]+>\s*)*\s*/i, '');
+        if (currentParagraph) {
+          const passageBox = `<div class="passage-box mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-800"><strong class="text-xs font-bold uppercase tracking-wider text-primary-700 block mb-1">Comprehension Passage:</strong>${currentParagraph}</div>`;
+          qText = passageBox + qText;
+        }
+
         currentQuestion = {
-          type: 'MCQ',
+          type: currentParagraph ? 'PARAGRAPH' : 'MCQ',
+          className: currentClass,
           subjectName: currentSubject,
           chapterName: currentChapter,
           topicName: currentTopic,
           difficulty: currentDifficulty,
-          questionText: htmlContent.replace(/^(?:\[Q\]|Q\s*|Q\d+\.?\s*)/i, ''),
+          paragraphText: currentParagraph || '',
+          questionText: qText,
           options: [],
           correctAnswerText: '',
           explanation: '',
@@ -128,31 +198,55 @@ class ExamService {
           order: questions.length + 1
         };
         currentAppendTarget = 'QUESTION';
-      } else if (currentQuestion && text.match(/^\[([A-D])\]/i)) {
-        const optionLabel = text.match(/^\[([A-D])\]/i)[1].toUpperCase();
+      } else if (currentQuestion && text.match(/^(?:\[([A-F])\]|\(([A-F])\)|([A-F])[.)]\s+)/i)) {
+        const optMatch = text.match(/^(?:\[([A-F])\]|\(([A-F])\)|([A-F])[.)]\s+)/i);
+        const optionLabel = (optMatch[1] || optMatch[2] || optMatch[3]).toUpperCase();
         currentQuestion.options.push({
           label: optionLabel,
-          text: htmlContent.replace(/^\[[A-D]\]\s*/i, ''),
+          text: htmlContent.replace(/^(?:\s*<[^>]+>)*\s*(?:\[[A-F]\]|\([A-F]\)|[A-F][.)]\s*)\s*(?:<\/[^>]+>\s*)*\s*/i, ''),
           isCorrect: false
         });
         currentAppendTarget = 'OPTION';
-      } else if (currentQuestion && text.match(/^\[Ans\.?\]/i)) {
-        const ans = text.replace(/^\[Ans\.?\]\s*/i, '').trim().toUpperCase(); // Expecting A, B, C, or D
-        const optIndex = currentQuestion.options.findIndex(o => o.label === ans);
-        if (optIndex !== -1) {
-          currentQuestion.options[optIndex].isCorrect = true;
+      } else if (currentQuestion && text.match(/^\[?Ans(?:wer)?\.?\s*\]?\s*[:\-]?/i)) {
+        const rawAns = text.replace(/^\[?Ans(?:wer)?\.?\s*\]?\s*[:\-]?\s*/i, '').trim();
+        currentQuestion.correctAnswerText = rawAns;
+
+        // If options were given, match option letters (e.g. A, or multiple: A, C, D)
+        const letters = rawAns.toUpperCase().match(/[A-F]/g);
+        if (currentQuestion.options.length > 0 && letters && letters.length > 0) {
+          letters.forEach(letter => {
+            const opt = currentQuestion.options.find(o => o.label === letter);
+            if (opt) opt.isCorrect = true;
+          });
+
+          if (letters.length > 1) {
+            currentQuestion.type = 'MULTIPLE_CORRECT';
+          }
+        } else if (currentQuestion.options.length === 0) {
+          // No options given: classify into Integer, Numerical, Fill in Blanks, or Subjective
+          if (/^-?\d+$/.test(rawAns)) {
+            currentQuestion.type = 'INTEGER';
+          } else if (/^-?\d*\.?\d+$/.test(rawAns)) {
+            currentQuestion.type = 'NUMERICAL';
+          } else if (currentQuestion.questionText.includes('____') || /fill\s+in/i.test(currentQuestion.questionText)) {
+            currentQuestion.type = 'FILL_BLANKS';
+          } else {
+            currentQuestion.type = 'SUBJECTIVE';
+          }
         }
-        currentAppendTarget = 'QUESTION'; // reset back to question after Ans
-      } else if (currentQuestion && text.match(/^\[Sol\.?\]/i)) {
-        currentQuestion.explanation = htmlContent.replace(/^\[Sol\.?\]\s*/i, '');
+        currentAppendTarget = 'QUESTION'; // Reset back to question after Ans
+      } else if (currentQuestion && text.match(/^\[?Sol(?:ution)?[.\s]*\]?\s*[:\-]?/i)) {
+        currentQuestion.explanation = htmlContent.replace(/^(?:\s*<[^>]+>)*\s*\[?Sol(?:ution)?[.\s]*\]?\s*[:\-]?\s*(?:<\/[^>]+>\s*)*\s*/i, '');
         currentAppendTarget = 'EXPLANATION';
-      } else if (currentQuestion && htmlContent) {
-        // If it doesn't match any tag, append it to the current target
-        if (currentAppendTarget === 'QUESTION') {
+      } else if (htmlContent) {
+        // Append content to current target
+        if (currentAppendTarget === 'PARAGRAPH') {
+          currentParagraph += `<br/>${htmlContent}`;
+        } else if (currentAppendTarget === 'QUESTION' && currentQuestion) {
           currentQuestion.questionText += `<br/>${htmlContent}`;
-        } else if (currentAppendTarget === 'OPTION' && currentQuestion.options.length > 0) {
+        } else if (currentAppendTarget === 'OPTION' && currentQuestion && currentQuestion.options.length > 0) {
           currentQuestion.options[currentQuestion.options.length - 1].text += `<br/>${htmlContent}`;
-        } else if (currentAppendTarget === 'EXPLANATION') {
+        } else if (currentAppendTarget === 'EXPLANATION' && currentQuestion) {
           currentQuestion.explanation += `<br/>${htmlContent}`;
         }
       }
@@ -162,18 +256,50 @@ class ExamService {
       questions.push(currentQuestion);
     }
 
+    // Refine question types based on content and structure
+    for (const q of questions) {
+      if (q.options.length === 2 && q.options.some(o => /^\s*true\s*$/i.test(o.text)) && q.options.some(o => /^\s*false\s*$/i.test(o.text))) {
+        q.type = 'TRUE_FALSE';
+      } else if (q.options.length > 0 && q.options.filter(o => o.isCorrect).length > 1) {
+        q.type = 'MULTIPLE_CORRECT';
+      } else if (/assertion/i.test(q.questionText) && /reason/i.test(q.questionText)) {
+        q.type = 'ASSERTION_REASON';
+      } else if (/match\s+column/i.test(q.questionText) || (/column\s+i/i.test(q.questionText) && /column\s+ii/i.test(q.questionText))) {
+        q.type = 'MATCH_THE_COLUMN';
+      } else if (/statement-i/i.test(q.questionText) || /statement\s+i/i.test(q.questionText)) {
+        q.type = 'STATEMENT_BASED';
+      } else if (q.options.length === 0) {
+        if (/^-?\d+$/.test(q.correctAnswerText)) {
+          q.type = 'INTEGER';
+        } else if (/^-?\d*\.?\d+$/.test(q.correctAnswerText)) {
+          q.type = 'NUMERICAL';
+        } else if (q.questionText.includes('____') || /fill\s+in/i.test(q.questionText)) {
+          q.type = 'FILL_BLANKS';
+        } else {
+          q.type = 'SUBJECTIVE';
+        }
+      }
+    }
+
     // Clean up temporary labels from options before returning
     const cleanedQuestions = questions.map(q => {
+      let defaultAns = q.correctAnswerText;
+      if (!defaultAns && q.options && q.options.length > 0) {
+        const correctLabels = q.options.filter(o => o.isCorrect).map(o => o.label);
+        defaultAns = correctLabels.join(', ');
+      }
+
       return {
         ...q,
-        options: q.options.map(o => ({
+        correctAnswerText: defaultAns || '',
+        options: (q.options || []).map(o => ({
           text: o.text,
           isCorrect: o.isCorrect
         }))
       };
     });
 
-    // Group by subject to ensure contiguous numbering when ap
+    // Group by subject to ensure contiguous numbering when applicable
     const grouped = {};
     const subjectOrder = [];
     cleanedQuestions.forEach(q => {
