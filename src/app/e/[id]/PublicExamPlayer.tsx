@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Clock, ShieldAlert, ChevronRight, ChevronLeft, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import ImageZoomModal from '@/components/ui/ImageZoomModal';
+import BasicCalculator from '@/components/exams/BasicCalculator';
 import { publicAPI } from '@/api/publicAPI';
 import toast from 'react-hot-toast';
 
 export default function PublicExamPlayer({ exam, questions, token }: any) {
   const [submission, setSubmission] = useState<{ answers: any[] }>({ answers: [] });
   const [currentQIdx, setCurrentQIdx] = useState(0);
+  const [timeSpentByQuestion, setTimeSpentByQuestion] = useState<Record<string, number>>({});
   
   const [timeLeft, setTimeLeft] = useState(exam.settings?.durationMinutes * 60 || 3600);
   const [violations, setViolations] = useState({ tabSwitches: 0, fullScreenExits: 0 });
@@ -15,12 +18,31 @@ export default function PublicExamPlayer({ exam, questions, token }: any) {
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState(null);
+  const [calculatorOpen, setCalculatorOpen] = useState(false);
+
+  const handleContentClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target && target.tagName === 'IMG') {
+      e.preventDefault();
+      e.stopPropagation();
+      const src = (target as HTMLImageElement).src;
+      if (src) {
+        setZoomedImage(src);
+      }
+    }
+  };
   
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const canvasRef = useRef(null);
   const snapshotIntervalRef = useRef(null);
   const timerRef = useRef(null);
+  const currentQIdxRef = useRef(0);
+
+  useEffect(() => {
+    currentQIdxRef.current = currentQIdx;
+  }, [currentQIdx]);
   
   const getSubjectName = (q) => q?.subject?.name || q?.subjectName || (typeof q?.subject === 'string' ? q.subject : 'General');
   const subjects = [...new Set(questions.map(q => getSubjectName(q)))];
@@ -63,9 +85,14 @@ export default function PublicExamPlayer({ exam, questions, token }: any) {
 
   const submitExamData = async () => {
     try {
+      const answersWithTiming = submission.answers.map((answer) => ({
+        ...answer,
+        timeSpentSeconds: timeSpentByQuestion[String(answer.questionId)] || 0,
+      }));
       const res = await publicAPI.submitExam(exam._id, token, {
-        answers: submission.answers,
-        violations
+        answers: answersWithTiming,
+        timeSpentPerQuestion: timeSpentByQuestion,
+        violations,
       });
       setResult(res.data.data);
       setSubmitted(true);
@@ -85,7 +112,7 @@ export default function PublicExamPlayer({ exam, questions, token }: any) {
     clearInterval(snapshotIntervalRef.current);
     await submitExamData();
     setSubmitting(false);
-  }, [submission, violations, submitting]);
+  }, [submission, violations, submitting, timeSpentByQuestion]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -97,14 +124,21 @@ export default function PublicExamPlayer({ exam, questions, token }: any) {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ answers: submission.answers, violations }),
+          body: JSON.stringify({
+            answers: submission.answers.map((answer) => ({
+              ...answer,
+              timeSpentSeconds: timeSpentByQuestion[String(answer.questionId)] || 0,
+            })),
+            timeSpentPerQuestion: timeSpentByQuestion,
+            violations,
+          }),
           keepalive: true
         }).catch(() => {});
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [submission, violations, submitted, submitting, exam._id, token]);
+  }, [submission, violations, submitted, submitting, exam._id, token, timeSpentByQuestion]);
 
   useEffect(() => {
     const startCamera = async () => {
@@ -131,6 +165,14 @@ export default function PublicExamPlayer({ exam, questions, token }: any) {
     startCamera();
 
     timerRef.current = setInterval(() => {
+      const activeQuestion = questions[currentQIdxRef.current];
+      const activeQuestionId = activeQuestion?._id || activeQuestion?.id;
+      if (activeQuestionId) {
+        setTimeSpentByQuestion((previous) => ({
+          ...previous,
+          [String(activeQuestionId)]: (previous[String(activeQuestionId)] || 0) + 1,
+        }));
+      }
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current);
@@ -403,7 +445,10 @@ export default function PublicExamPlayer({ exam, questions, token }: any) {
               ))}
            </div>
 
-           <div className="p-6 relative z-10 flex flex-col h-full">
+           <div 
+             onClickCapture={handleContentClick}
+             className="p-6 relative z-10 flex flex-col h-full"
+           >
               <div className="flex justify-between items-center border-b border-gray-200 pb-3 mb-5">
                 <h2 className="text-lg font-bold text-gray-800">Q.{currentQIdx + 1}</h2>
                 <div className="flex gap-4 text-sm font-bold bg-gray-100 px-3 py-1 rounded">
@@ -412,24 +457,36 @@ export default function PublicExamPlayer({ exam, questions, token }: any) {
                 </div>
               </div>
 
-              <div className="prose max-w-none text-gray-900 text-base mb-8 font-medium leading-relaxed" dangerouslySetInnerHTML={{ __html: currentQuestion.questionText }} />
+              <div className="prose max-w-none text-gray-900 text-base mb-8 font-medium leading-relaxed question-content" dangerouslySetInnerHTML={{ __html: currentQuestion.questionText }} />
 
               <div className="space-y-3 flex-1 ml-4">
                 {currentQuestion.options?.map((opt, idx) => {
+                  const optionLabel = opt.label || String.fromCharCode(65 + idx);
                   const isSelected = currentAnswer?.selectedOptionId === opt._id;
                   return (
                     <label 
                       key={opt._id}
-                      className="flex items-start gap-4 p-2 rounded hover:bg-gray-50 cursor-pointer group"
+                      className={`flex items-start gap-3 p-2.5 rounded-lg border transition-all cursor-pointer group ${
+                        isSelected 
+                          ? 'bg-blue-50/70 border-[#1c75b8]' 
+                          : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                      }`}
                     >
                       <input 
                         type="radio" 
                         name="question_option" 
-                        className="w-4 h-4 mt-1 text-[#1c75b8] border-gray-400 focus:ring-[#1c75b8] cursor-pointer"
+                        className="w-4 h-4 mt-1.5 text-[#1c75b8] border-gray-400 focus:ring-[#1c75b8] cursor-pointer shrink-0"
                         checked={isSelected}
                         onChange={() => handleOptionSelect(currentQuestion._id, opt._id)}
                       />
-                      <div className="text-gray-800 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: opt.text }} />
+                      <span className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 border select-none transition-colors ${
+                        isSelected 
+                          ? 'bg-[#1c75b8] text-white border-[#1c75b8]' 
+                          : 'bg-gray-100 text-gray-700 border-gray-300 group-hover:bg-gray-200'
+                      }`}>
+                        {optionLabel}
+                      </span>
+                      <div className="text-gray-800 text-sm leading-relaxed flex-1 min-w-0 option-content" dangerouslySetInnerHTML={{ __html: opt.text }} />
                     </label>
                   );
                 })}
@@ -489,6 +546,8 @@ export default function PublicExamPlayer({ exam, questions, token }: any) {
               </div>
            </div>
          </div>
+
+         <BasicCalculator open={calculatorOpen} onToggle={() => setCalculatorOpen(open => !open)} />
 
          <div className="p-3 bg-[#e8f1f8] grid grid-cols-2 gap-x-1 gap-y-2 text-[11px] font-bold text-gray-700 border-b border-white border-t border-t-gray-200/50">
             <div className="flex items-center gap-2">
@@ -603,7 +662,12 @@ export default function PublicExamPlayer({ exam, questions, token }: any) {
            </div>
         </div>
       )}
-    
+
+      {/* Full Image Zoom Lightbox */}
+      <ImageZoomModal 
+        imageUrl={zoomedImage} 
+        onClose={() => setZoomedImage(null)} 
+      />
     </div>
   );
 }

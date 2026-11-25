@@ -20,6 +20,16 @@ const examSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
+  // Optional provenance for papers imported from external question-bank portals.
+  // The pair is used for idempotent imports and is never shown to students.
+  sourceSystem: {
+    type: String,
+    trim: true,
+  },
+  sourcePaperId: {
+    type: String,
+    trim: true,
+  },
   assignedBatches: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Batch',
@@ -29,16 +39,17 @@ const examSchema = new mongoose.Schema({
     enum: ['INTERNAL', 'PUBLIC'],
     default: 'INTERNAL'
   },
-  accessType: {
+  // Controls access to an individual course test. Legacy exams remain paid
+  // (enrollment-gated) so existing access rules are not weakened by default.
+  accessMode: {
     type: String,
     enum: ['FREE', 'PAID'],
-    default: 'FREE',
-    index: true,
+    default: 'PAID'
   },
-  price: {
+  accessPrice: {
     type: Number,
     min: 0,
-    default: 0,
+    default: 0
   },
   settings: {
     startTime: {
@@ -100,6 +111,8 @@ const examSchema = new mongoose.Schema({
   sourceSystem: { type: String, trim: true, index: true },
   sourcePaperId: { type: String, trim: true, index: true },
 }, { timestamps: true });
+
+examSchema.index({ institute: 1, sourceSystem: 1, sourcePaperId: 1 }, { sparse: true });
 
 // Check if exam is active right now
 examSchema.virtual('isActive').get(function () {

@@ -1,6 +1,40 @@
 const BatchModel = require('../modules/batches/batches.model');
 const { errorResponse } = require('../common/responses');
 
+const ACCESS_FEATURES = ['liveClasses', 'studyMaterials', 'dpps', 'testSeries'];
+
+/**
+ * Compute which plan features a student can use: a feature is on when any
+ * batch they are enrolled in belongs to a course whose `access[feature]` is true.
+ * @param {string} userId
+ * @returns {Promise<{liveClasses: boolean, studyMaterials: boolean, dpps: boolean, testSeries: boolean}>}
+ */
+const getStudentAccess = async (userId) => {
+  const batches = await BatchModel.find({ students: userId }).populate('courseId', 'access');
+  const access = {};
+  for (const feature of ACCESS_FEATURES) {
+    access[feature] = batches.some((b) => Boolean(b.courseId && b.courseId.access && b.courseId.access[feature]));
+  }
+  return access;
+};
+
+/**
+ * Express handler for GET /users/me/access. Non-students are never plan-gated
+ * (checkAccess bypasses them too), so they get everything true.
+ */
+const getMyAccess = async (req, res) => {
+  try {
+    const isStudent = String(req.user.role).toLowerCase() === 'student';
+    const data = isStudent
+      ? await getStudentAccess(req.user.userId)
+      : Object.fromEntries(ACCESS_FEATURES.map((f) => [f, true]));
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    console.error('Access Fetch Error:', err);
+    return errorResponse(res, 'Internal Server Error during access check', null, 500);
+  }
+};
+
 /**
  * Middleware to check if the student has purchased a course that includes a specific feature.
  * @param {string} feature - e.g., 'liveClasses', 'studyMaterials', 'dpps', 'testSeries'
@@ -14,15 +48,8 @@ const checkAccess = (feature) => {
       }
 
       // Fetch all batches the student is enrolled in, populated with course access
-      const batches = await BatchModel.find({ students: req.user.userId }).populate('courseId', 'access');
-      
-      let hasAccess = false;
-      for (const batch of batches) {
-        if (batch.courseId && batch.courseId.access && batch.courseId.access[feature]) {
-          hasAccess = true;
-          break;
-        }
-      }
+      const access = await getStudentAccess(req.user.userId);
+      const hasAccess = Boolean(access[feature]);
 
       if (!hasAccess) {
         const featureNames = {
@@ -43,6 +70,25 @@ const checkAccess = (feature) => {
   };
 };
 
+// Individual tests can be marked FREE or PAID. FREE tests still require a
+// logged-in student, but do not require course enrollment; PAID tests retain
+// the existing enrollment/feature check.
+const checkExamAccess = async (req, res, next) => {
+  try {
+    if (req.user.role !== 'student' && req.user.role !== 'STUDENT') return next();
+    const Exam = require('../modules/exams/exam.model');
+    const exam = await Exam.findById(req.params.id).select('accessMode');
+    if (exam?.accessMode === 'FREE') return next();
+    return checkAccess('testSeries')(req, res, next);
+  } catch (err) {
+    console.error('Exam Access Check Error:', err);
+    return errorResponse(res, 'Internal Server Error during exam access check', null, 500);
+  }
+};
+
 module.exports = {
-  checkAccess
+  checkAccess,
+  getStudentAccess,
+  getMyAccess,
+  checkExamAccess
 };
