@@ -271,9 +271,13 @@ exports.requestEmailOtp = async (req, res, next) => {
         // Why: the OTP used to be a fixed '123456' for every account (admins included).
         // A static OTP is honoured only when STATIC_OTP is set AND NODE_ENV is
         // explicitly a non-production value (unset NODE_ENV fails closed), for
-        // testing without SMTP.
-        const useStaticOtp = ['development', 'test', 'staging'].includes(process.env.NODE_ENV) &&
-            Boolean(process.env.STATIC_OTP);
+        // testing without SMTP. ALLOW_STATIC_OTP_IN_PRODUCTION=true is a temporary
+        // override for production servers that have no SMTP configured yet; anyone
+        // who knows an admin email can sign in while it is on, so remove it once
+        // SMTP_USER/SMTP_PASS are set.
+        const staticOtpAllowed = ['development', 'test', 'staging'].includes(process.env.NODE_ENV) ||
+            process.env.ALLOW_STATIC_OTP_IN_PRODUCTION === 'true';
+        const useStaticOtp = staticOtpAllowed && Boolean(process.env.STATIC_OTP);
         const otp = useStaticOtp ? String(process.env.STATIC_OTP) : generateOtp();
 
         await OtpModel.create({ email: email.toLowerCase(), otp });
